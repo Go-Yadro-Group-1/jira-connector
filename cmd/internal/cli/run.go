@@ -10,7 +10,7 @@ import (
 	"os/signal"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/app"
-	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/config"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

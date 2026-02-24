@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/config"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/broker/consumer"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/broker/publisher"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/service/sync"
 )
 
@@ -21,7 +21,7 @@ type App struct {
 }
 
 func New(cfg config.JiraConfig, projectKey string) (*App, error) {
-	jiraClient := jira.New(cfg.BaseURL, cfg.Token)
+	jiraClient := jira.New(cfg)
 	// repo := postgres.NewRepository(cfg.DB.Host, cfg.DB.Port, cfg.DB.User, cfg.DB.Password, cfg.DB.DBName)
 
 	syncer := sync.NewService(jiraClient, nil)
@@ -51,30 +51,29 @@ func (a *App) Close() error {
 
 func (a *App) run() error {
 	ctx := context.Background()
-	jql := fmt.Sprintf(`project = "%s"`, a.projectKey)
 
-	client := jira.New(a.cfg.BaseURL, a.cfg.Token)
+	client := jira.New(a.cfg)
 
-	log.Printf("Searching issues with JQL: %s", jql)
+	log.Println("Fetching projects...")
 
-	resp, err := client.SearchIssues(ctx, jql)
+	searchQuery := ""
+	limit := 10
+	page := 0
+
+	projResp, err := client.GetProjects(ctx, searchQuery, limit, page)
 	if err != nil {
-		return fmt.Errorf("search failed: %w", err)
+		return fmt.Errorf("get projects failed: %w", err)
 	}
 
-	if len(resp.Issues) == 0 {
-		log.Println("No issues found.")
+	if len(projResp.Values) == 0 {
+		log.Println("No projects found.")
 
 		return nil
 	}
 
-	log.Printf("Found %d issues:", len(resp.Issues))
-	for _, issue := range resp.Issues {
-		log.Printf("- [%s] %s (Status: %s)",
-			issue.Key,
-			issue.Fields.Summary,
-			issue.Fields.Status.Name,
-		)
+	log.Printf("Found %d projects (Total available: %d):", len(projResp.Values), projResp.Total)
+	for _, proj := range projResp.Values {
+		log.Printf("- Key: [%s], Name: %s, URL: %s", proj.Key, proj.Name, proj.Self)
 	}
 
 	return nil

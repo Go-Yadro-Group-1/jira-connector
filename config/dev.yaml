@@ -1,6 +1,10 @@
 jira:
   baseUrl: "https://issues.apache.org/jira"
   token: ""
+  maxResults: 50
+  minRetryDelay: 1000
+  maxRetryDelay: 60000
+  rateLimitPerSec: 5.0    
 
 db:
   host: "localhost"
