@@ -106,6 +106,27 @@ type Error struct {
 	Errors        map[string]string `json:"errors,omitempty"`
 }
 
+func mapStatusToMessage(statusCode int) string {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return "Unauthorized: invalid token or credentials"
+	case http.StatusForbidden:
+		return "Forbidden: insufficient permissions to access the resource"
+	case http.StatusNotFound:
+		return "Not Found: the requested resource does not exist"
+	case http.StatusTooManyRequests:
+		return "Rate Limit Exceeded: too many requests, please slow down"
+	case http.StatusInternalServerError:
+		return "Internal Server Error: Jira server encountered an unexpected condition"
+	case http.StatusBadGateway:
+		return "Bad Gateway: Jira server received an invalid response from upstream"
+	case http.StatusServiceUnavailable:
+		return "Service Unavailable: Jira server is temporarily down for maintenance"
+	default:
+		return "Request failed"
+	}
+}
+
 func (e *Error) Error() string {
 	if e.Message != "" {
 		return fmt.Sprintf("Jira API: %d, message: %s", e.StatusCode, e.Message)
@@ -117,6 +138,17 @@ func (e *Error) Error() string {
 
 	if len(e.Errors) > 0 {
 		return fmt.Sprintf("Jira API: %d, field errors: %v", e.StatusCode, e.Errors)
+	}
+
+	baseMsg := mapStatusToMessage(e.StatusCode)
+
+	if len(e.Body) > 0 {
+		bodyStr := string(e.Body)
+		if len(bodyStr) > 200 {
+			bodyStr = bodyStr[:200] + "..."
+		}
+
+		return fmt.Sprintf("%s (Status: %d). Raw body: %s", baseMsg, e.StatusCode, bodyStr)
 	}
 
 	return fmt.Sprintf("Jira API: %d, body: %s", e.StatusCode, string(e.Body))
