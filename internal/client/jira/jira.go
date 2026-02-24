@@ -26,6 +26,7 @@ const (
 	minAllowedResults      = 50
 	maxAllowedResults      = 1000
 	retryBackoffMultiplier = 2
+	maxErrorBodyLength     = 200
 )
 
 var errInternalInvalidAction = errors.New("internal error: unknown action from handleResponse")
@@ -144,8 +145,8 @@ func (e *Error) Error() string {
 
 	if len(e.Body) > 0 {
 		bodyStr := string(e.Body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
+		if len(bodyStr) > maxErrorBodyLength {
+			bodyStr = bodyStr[:maxErrorBodyLength] + "..."
 		}
 
 		return fmt.Sprintf("%s (Status: %d). Raw body: %s", baseMsg, e.StatusCode, bodyStr)
