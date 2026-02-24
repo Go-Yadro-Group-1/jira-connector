@@ -16,7 +16,7 @@ type App struct {
 	cfg        config.JiraConfig
 	consumer   *consumer.Consumer   //nolint:unused
 	publisher  *publisher.Publisher //nolint:unused
-	syncer     *sync.SyncService    //nolint:unused
+	syncer     *sync.Service        //nolint:unused
 	projectKey string
 }
 
