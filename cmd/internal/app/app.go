@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/config"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/broker/consumer"
@@ -15,7 +16,7 @@ type App struct {
 	cfg        config.JiraConfig
 	consumer   *consumer.Consumer   //nolint:unused
 	publisher  *publisher.Publisher //nolint:unused
-	syncer     *sync.Service        //nolint:unused
+	syncer     *sync.SyncService    //nolint:unused
 	projectKey string
 }
 
@@ -49,14 +50,31 @@ func (a *App) Close() error {
 }
 
 func (a *App) run() error {
-	maxWorkers := 10
-
 	ctx := context.Background()
-
 	jql := fmt.Sprintf(`project = "%s"`, a.projectKey)
 
-	if err := a.syncer.RunWorkerPool(ctx, jql, maxWorkers); err != nil {
-		return fmt.Errorf("sync failed: %w", err)
+	client := jira.New(a.cfg.BaseURL, a.cfg.Token)
+
+	log.Printf("Searching issues with JQL: %s", jql)
+
+	resp, err := client.SearchIssues(ctx, jql)
+	if err != nil {
+		return fmt.Errorf("search failed: %w", err)
+	}
+
+	if len(resp.Issues) == 0 {
+		log.Println("No issues found.")
+
+		return nil
+	}
+
+	log.Printf("Found %d issues:", len(resp.Issues))
+	for _, issue := range resp.Issues {
+		log.Printf("- [%s] %s (Status: %s)",
+			issue.Key,
+			issue.Fields.Summary,
+			issue.Fields.Status.Name,
+		)
 	}
 
 	return nil
