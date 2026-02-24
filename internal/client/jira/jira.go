@@ -3,6 +3,7 @@ package jira
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,8 @@ const (
 	maxAllowedResults      = 1000
 	retryBackoffMultiplier = 2
 )
+
+var errInternalInvalidAction = errors.New("internal error: unknown action from handleResponse")
 
 type responseAction string
 
@@ -344,7 +347,7 @@ func (c *Client) do(
 				resp.Body.Close()
 			}
 
-			return nil, fmt.Errorf("internal error: unknown action from handleResponse")
+			return nil, errInternalInvalidAction
 		}
 	}
 }
