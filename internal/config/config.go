@@ -8,8 +8,12 @@ import (
 )
 
 type JiraConfig struct {
-	BaseURL string `yaml:"baseUrl"`
-	Token   string `yaml:"token"`
+	BaseURL         string  `yaml:"baseUrl"`
+	Token           string  `yaml:"token"`
+	MaxResults      int     `yaml:"maxResults"`
+	MinRetryDelay   int     `yaml:"minRetryDelay"`
+	MaxRetryDelay   int     `yaml:"maxRetryDelay"`
+	RateLimitPerSec float64 `yaml:"rateLimitPerSec"`
 }
 
 type DBConfig struct {
