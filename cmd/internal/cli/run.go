@@ -4,12 +4,13 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/app"
-	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/config"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -18,6 +19,7 @@ import (
 var embeddedRunLongData string
 
 const (
+	flagProjectKey    = "project"
 	flagConfigFile    = "config"
 	flagConfigFileH   = "c"
 	defaultConfigPath = "config/release.yaml"
@@ -28,6 +30,7 @@ var (
 	errReadConfig      = errors.New("read config file")
 	errValidateConfig  = errors.New("validate config") //nolint:unused
 	errInitApplication = errors.New("create new fs manager")
+	errNoProjectKey    = errors.New("flag --project is required")
 )
 
 func NewRunCmd() *cobra.Command {
@@ -41,12 +44,20 @@ func NewRunCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
 
-			cfg, err := config.New()
+			cfg, err := config.LoadDevConfig()
 			if err != nil {
 				return errors.Join(errReadConfig, err)
 			}
 
-			connector, err := app.New(cfg)
+			projectKey, err := cmd.Flags().GetString(flagProjectKey)
+			if err != nil {
+				return fmt.Errorf("failed to get project flag: %w", err)
+			}
+			if projectKey == "" {
+				return errNoProjectKey
+			}
+
+			connector, err := app.New(cfg.Jira, projectKey)
 			if err != nil {
 				return errors.Join(errInitApplication, err)
 			}
@@ -72,4 +83,5 @@ func NewRunCmd() *cobra.Command {
 
 func initConfigPath(flagset *pflag.FlagSet) {
 	flagset.StringP(flagConfigFile, flagConfigFileH, defaultConfigPath, "path to config")
+	flagset.String(flagProjectKey, "", "Jira project key to sync")
 }

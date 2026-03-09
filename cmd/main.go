@@ -8,6 +8,7 @@ import (
 
 func main() {
 	rootCmd := cli.NewRootCmd()
+	rootCmd.AddCommand(cli.NewRunCmd())
 
 	err := rootCmd.Execute()
 	if err != nil {
