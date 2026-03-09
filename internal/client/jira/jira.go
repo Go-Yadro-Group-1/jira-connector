@@ -204,10 +204,6 @@ func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleErrorResponse(resp)
-	}
-
 	var issue Issue
 	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
 		return nil, fmt.Errorf("decode Jira issue response: %w", err)
@@ -238,10 +234,6 @@ func (c *Client) SearchIssues(
 		return nil, fmt.Errorf("failed to perform search request to %q: %w", urlStr, err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleErrorResponse(resp)
-	}
 
 	var searchResp SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
@@ -289,10 +281,6 @@ func (c *Client) GetProjects(
 		return nil, fmt.Errorf("failed to fetch projects: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleErrorResponse(resp)
-	}
 
 	return parseProjectsResponse(resp)
 }
@@ -396,9 +384,13 @@ func (c *Client) handleResponse(
 		return c.handleNetworkError(ctx, err, lastErr, delay)
 	}
 
-	if resp.StatusCode == http.StatusTooManyRequests ||
-		resp.StatusCode == http.StatusServiceUnavailable {
-		return c.handleRetryStatus(ctx, resp, delay)
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusServiceUnavailable {
+			return c.handleRetryStatus(ctx, resp, delay)
+		}
+
+		return actionError, delay, c.handleErrorResponse(resp)
 	}
 
 	return actionReturn, delay, nil
