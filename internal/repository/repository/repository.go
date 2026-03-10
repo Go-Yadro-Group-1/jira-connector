@@ -1,8 +1,9 @@
-package postgres
+package repository
 
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/models/raw"
 )
@@ -26,7 +27,7 @@ func (r *Repository) InsertProject(ctx context.Context, project raw.Project) err
 		project.Title,
 	)
 
-	return err
+	return fmt.Errorf("failed to insert project: %w", err)
 }
 
 func (r *Repository) InsertAuthor(ctx context.Context, author raw.Author) error {
@@ -38,7 +39,7 @@ func (r *Repository) InsertAuthor(ctx context.Context, author raw.Author) error 
 		author.Name,
 	)
 
-	return err
+	return fmt.Errorf("failed to insert author: %w", err)
 }
 
 func (r *Repository) InsertIssue(ctx context.Context, issue raw.Issue) error {
@@ -79,7 +80,7 @@ func (r *Repository) InsertIssue(ctx context.Context, issue raw.Issue) error {
 		issue.TimeSpent,
 	)
 
-	return err
+	return fmt.Errorf("failed to insert issue: %w", err)
 }
 
 func (r *Repository) InsertStatusChange(ctx context.Context, change raw.StatusChange) error {
@@ -100,5 +101,5 @@ func (r *Repository) InsertStatusChange(ctx context.Context, change raw.StatusCh
 		change.ToStatus,
 	)
 
-	return err
+	return fmt.Errorf("failed to insert status change: %w", err)
 }

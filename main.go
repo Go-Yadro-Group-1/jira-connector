@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/models/raw"
-	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/repository/postgres"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/repository"
 	_ "github.com/lib/pq"
 )
 
@@ -15,23 +15,21 @@ import (
 func main() {
 	connStr := "postgres://postgres:postgres@127.0.0.1:5433/postgres?sslmode=disable"
 
-	db, err := sql.Open("postgres", connStr)
+	database, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer db.Close()
+	ctx := context.Background()
 
-	err = db.Ping()
+	err = database.PingContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	log.Println("Connected to DB")
 
-	repo := postgres.New(db)
-
-	ctx := context.Background()
+	repo := repository.New(database)
 
 	project := raw.Project{
 		ID:    1,
@@ -84,6 +82,7 @@ func main() {
 	}
 
 	log.Println("Test data inserted successfully")
+	database.Close()
 }
 
 func strPtr(s string) *string {
