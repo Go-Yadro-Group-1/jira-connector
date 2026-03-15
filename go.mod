@@ -3,6 +3,7 @@ module github.com/Go-Yadro-Group-1/Jira-Connector
 go 1.24.4
 
 require (
+	github.com/lib/pq v1.11.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 )
