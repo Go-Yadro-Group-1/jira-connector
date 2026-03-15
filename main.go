@@ -22,6 +22,19 @@ func main() {
 
 	ctx := context.Background()
 
+	_, err = database.ExecContext(ctx, `
+	TRUNCATE TABLE
+		raw.status_changes,
+		raw.issue,
+		raw.author,
+		raw.project
+	RESTART IDENTITY CASCADE
+	`)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	err = database.PingContext(ctx)
 	if err != nil {
 		log.Fatal(err)

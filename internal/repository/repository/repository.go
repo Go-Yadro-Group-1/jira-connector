@@ -3,9 +3,30 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/models/raw"
+)
+
+//go:embed queries
+var queriesFS embed.FS
+
+func mustQuery(name string) string {
+	b, err := queriesFS.ReadFile("queries/" + name)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(b)
+}
+
+// nolint: gochecknoglobals
+var (
+	insertProjectQuery      = mustQuery("insert_project.sql")
+	insertAuthorQuery       = mustQuery("insert_author.sql")
+	insertIssueQuery        = mustQuery("insert_issue.sql")
+	insertStatusChangeQuery = mustQuery("insert_status_change.sql")
 )
 
 type Repository struct {
@@ -19,51 +40,33 @@ func New(db *sql.DB) *Repository {
 }
 
 func (r *Repository) InsertProject(ctx context.Context, project raw.Project) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO raw.project (id, title)
-		VALUES ($1, $2)
-	`,
+	_, err := r.db.ExecContext(ctx, insertProjectQuery,
 		project.ID,
 		project.Title,
 	)
 
-	return fmt.Errorf("failed to insert project: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to insert project: %w", err)
+	}
+
+	return nil
 }
 
 func (r *Repository) InsertAuthor(ctx context.Context, author raw.Author) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO raw.author (id, name)
-		VALUES ($1, $2)
-	`,
+	_, err := r.db.ExecContext(ctx, insertAuthorQuery,
 		author.ID,
 		author.Name,
 	)
 
-	return fmt.Errorf("failed to insert author: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to insert author: %w", err)
+	}
+
+	return nil
 }
 
 func (r *Repository) InsertIssue(ctx context.Context, issue raw.Issue) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO raw.issue (
-			id,
-			project_id,
-			author_id,
-			assignee_id,
-			key,
-			summary,
-			description,
-			type,
-			priority,
-			status,
-			created_time,
-			closed_time,
-			updated_time,
-			time_spent
-		)
-		VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
-		)
-	`,
+	_, err := r.db.ExecContext(ctx, insertIssueQuery,
 		issue.ID,
 		issue.ProjectID,
 		issue.AuthorID,
@@ -80,20 +83,15 @@ func (r *Repository) InsertIssue(ctx context.Context, issue raw.Issue) error {
 		issue.TimeSpent,
 	)
 
-	return fmt.Errorf("failed to insert issue: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to insert issue: %w", err)
+	}
+
+	return nil
 }
 
 func (r *Repository) InsertStatusChange(ctx context.Context, change raw.StatusChange) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO raw.status_changes (
-			issue_id,
-			author_id,
-			change_time,
-			from_status,
-			to_status
-		)
-		VALUES ($1,$2,$3,$4,$5)
-	`,
+	_, err := r.db.ExecContext(ctx, insertStatusChangeQuery,
 		change.IssueID,
 		change.AuthorID,
 		change.ChangeTime,
@@ -101,5 +99,9 @@ func (r *Repository) InsertStatusChange(ctx context.Context, change raw.StatusCh
 		change.ToStatus,
 	)
 
-	return fmt.Errorf("failed to insert status change: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to insert status change: %w", err)
+	}
+
+	return nil
 }
