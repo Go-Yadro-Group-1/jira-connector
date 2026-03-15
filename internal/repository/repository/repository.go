@@ -21,7 +21,7 @@ func mustQuery(name string) string {
 	return string(b)
 }
 
-// nolint: gochecknoglobals
+//nolint:gochecknoglobals
 var (
 	insertProjectQuery      = mustQuery("insert_project.sql")
 	insertAuthorQuery       = mustQuery("insert_author.sql")
@@ -44,7 +44,6 @@ func (r *Repository) InsertProject(ctx context.Context, project raw.Project) err
 		project.ID,
 		project.Title,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to insert project: %w", err)
 	}
@@ -57,7 +56,6 @@ func (r *Repository) InsertAuthor(ctx context.Context, author raw.Author) error 
 		author.ID,
 		author.Name,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to insert author: %w", err)
 	}
@@ -82,7 +80,6 @@ func (r *Repository) InsertIssue(ctx context.Context, issue raw.Issue) error {
 		issue.UpdatedTime,
 		issue.TimeSpent,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to insert issue: %w", err)
 	}
@@ -98,7 +95,6 @@ func (r *Repository) InsertStatusChange(ctx context.Context, change raw.StatusCh
 		change.FromStatus,
 		change.ToStatus,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to insert status change: %w", err)
 	}

@@ -30,7 +30,6 @@ func main() {
 		raw.project
 	RESTART IDENTITY CASCADE
 	`)
-
 	if err != nil {
 		log.Fatal(err)
 	}
