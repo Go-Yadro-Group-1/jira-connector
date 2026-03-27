@@ -1,0 +1,9 @@
+{
+  "issues": [
+    {"key": "TEST-1", "id": "1", "self": "url1", "fields": {}},
+    {"key": "TEST-2", "id": "2", "self": "url2", "fields": {}}
+  ],
+  "total": 2,
+  "startAt": 0,
+  "maxResults": 50
+}

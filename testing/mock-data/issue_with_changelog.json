@@ -1,0 +1,17 @@
+{
+  "key": "TEST-123",
+  "id": "12345",
+  "self": "https://jira.example.com/issue/TEST-123",
+  "fields": {"summary": "Test"},
+  "changelog": {
+    "histories": [{
+      "author": {"name": "user1", "displayName": "User One"},
+      "created": "2024-01-01T00:00:00Z",
+      "items": [{
+        "field": "status",
+        "fromString": "Open",
+        "toString": "In Progress"
+      }]
+    }]
+  }
+}
