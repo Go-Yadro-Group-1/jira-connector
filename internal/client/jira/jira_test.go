@@ -3,6 +3,7 @@ package jira
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +13,10 @@ import (
 	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
+)
+
+var (
+	errTestConnectionRefused = errors.New("connection refused")
 )
 
 func getProjectRoot() string {
@@ -42,7 +47,7 @@ func loadMockData(filename string) (io.ReadCloser, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read mock data file %s: %w", path, err)
 	}
 
 	return io.NopCloser(strings.NewReader(string(data))), nil
@@ -82,6 +87,8 @@ func testClient(roundTripFunc func(req *http.Request) (*http.Response, error)) *
 }
 
 func TestGetIssue_Success(t *testing.T) {
+	t.Parallel()
+
 	client := testClient(func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", req.Method)
@@ -99,7 +106,7 @@ func TestGetIssue_Success(t *testing.T) {
 		}, nil
 	})
 
-	issue, err := client.GetIssue(context.Background(), "TEST-123")
+	issue, err := client.GetIssue(t.Context(), "TEST-123")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -113,14 +120,16 @@ func TestGetIssue_Success(t *testing.T) {
 }
 
 func TestGetIssue_WithChangelog(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("issue_with_changelog.json"),
 		}, nil
 	})
 
-	issue, err := client.GetIssue(context.Background(), "TEST-123")
+	issue, err := client.GetIssue(t.Context(), "TEST-123")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -134,14 +143,16 @@ func TestGetIssue_WithChangelog(t *testing.T) {
 }
 
 func TestGetIssue_NotFound(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       mustLoadMockData("issue_not_found.json"),
 		}, nil
 	})
 
-	_, err := client.GetIssue(context.Background(), "TEST-999")
+	_, err := client.GetIssue(t.Context(), "TEST-999")
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -152,14 +163,16 @@ func TestGetIssue_NotFound(t *testing.T) {
 }
 
 func TestGetIssue_Unauthorized(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusUnauthorized,
 			Body:       mustLoadMockData("empty_response.json"),
 		}, nil
 	})
 
-	_, err := client.GetIssue(context.Background(), "TEST-123")
+	_, err := client.GetIssue(t.Context(), "TEST-123")
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -170,6 +183,8 @@ func TestGetIssue_Unauthorized(t *testing.T) {
 }
 
 func TestSearchIssues_Success(t *testing.T) {
+	t.Parallel()
+
 	client := testClient(func(req *http.Request) (*http.Response, error) {
 		jql := req.URL.Query().Get("jql")
 		if jql != "project=TEST" {
@@ -182,7 +197,7 @@ func TestSearchIssues_Success(t *testing.T) {
 		}, nil
 	})
 
-	resp, err := client.SearchIssues(context.Background(), "project=TEST", 0, 50)
+	resp, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -196,14 +211,16 @@ func TestSearchIssues_Success(t *testing.T) {
 }
 
 func TestSearchIssues_EmptyResult(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("search_empty.json"),
 		}, nil
 	})
 
-	resp, err := client.SearchIssues(context.Background(), "project=EMPTY", 0, 50)
+	resp, err := client.SearchIssues(t.Context(), "project=EMPTY", 0, 50)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -217,14 +234,16 @@ func TestSearchIssues_EmptyResult(t *testing.T) {
 }
 
 func TestSearchIssues_InvalidJQL(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusBadRequest,
 			Body:       mustLoadMockData("search_invalid_jql.json"),
 		}, nil
 	})
 
-	_, err := client.SearchIssues(context.Background(), "invalid jql", 0, 50)
+	_, err := client.SearchIssues(t.Context(), "invalid jql", 0, 50)
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -232,17 +251,20 @@ func TestSearchIssues_InvalidJQL(t *testing.T) {
 }
 
 func TestSearchIssues_UsesDefaultMaxResults(t *testing.T) {
+	t.Parallel()
+
 	var capturedMaxResults string
 
 	client := testClient(func(req *http.Request) (*http.Response, error) {
 		capturedMaxResults = req.URL.Query().Get("maxResults")
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("search_empty.json"),
 		}, nil
 	})
 
-	_, err := client.SearchIssues(context.Background(), "project=TEST", 0, 0)
+	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 0)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -253,6 +275,8 @@ func TestSearchIssues_UsesDefaultMaxResults(t *testing.T) {
 }
 
 func TestGetProjects_SuccessPaginated(t *testing.T) {
+	t.Parallel()
+
 	client := testClient(func(req *http.Request) (*http.Response, error) {
 		startAt := req.URL.Query().Get("startAt")
 		maxResults := req.URL.Query().Get("maxResults")
@@ -270,7 +294,7 @@ func TestGetProjects_SuccessPaginated(t *testing.T) {
 		}, nil
 	})
 
-	resp, err := client.GetProjects(context.Background(), "", 10, 0)
+	resp, err := client.GetProjects(t.Context(), "", 10, 0)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -287,14 +311,16 @@ func TestGetProjects_SuccessPaginated(t *testing.T) {
 }
 
 func TestGetProjects_SimpleListResponse(t *testing.T) {
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	t.Parallel()
+
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("projects_simple_list.json"),
 		}, nil
 	})
 
-	resp, err := client.GetProjects(context.Background(), "", 10, 0)
+	resp, err := client.GetProjects(t.Context(), "", 10, 0)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -308,6 +334,8 @@ func TestGetProjects_SimpleListResponse(t *testing.T) {
 }
 
 func TestGetProjects_WithSearchQuery(t *testing.T) {
+	t.Parallel()
+
 	var capturedQuery string
 
 	client := testClient(func(req *http.Request) (*http.Response, error) {
@@ -322,7 +350,7 @@ func TestGetProjects_WithSearchQuery(t *testing.T) {
 		}, nil
 	})
 
-	_, err := client.GetProjects(context.Background(), "test", 10, 0)
+	_, err := client.GetProjects(t.Context(), "test", 10, 0)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -333,9 +361,11 @@ func TestGetProjects_WithSearchQuery(t *testing.T) {
 }
 
 func TestRetry_OnTooManyRequests(t *testing.T) {
+	t.Parallel()
+
 	attempts := 0
 
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		attempts++
 		if attempts == 1 {
 			return &http.Response{
@@ -344,18 +374,14 @@ func TestRetry_OnTooManyRequests(t *testing.T) {
 				Body:       mustLoadMockData("empty_response.json"),
 			}, nil
 		}
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body: io.NopCloser(strings.NewReader(`{
-				"issues": [],
-				"total": 0,
-				"startAt": 0,
-				"maxResults": 50
-			}`)),
+			Body:       mustLoadMockData("search_empty.json"),
 		}, nil
 	})
 
-	_, err := client.SearchIssues(context.Background(), "project=TEST", 0, 50)
+	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -366,20 +392,23 @@ func TestRetry_OnTooManyRequests(t *testing.T) {
 }
 
 func TestRetry_OnNetworkError(t *testing.T) {
+	t.Parallel()
+
 	attempts := 0
 
-	client := testClient(func(req *http.Request) (*http.Response, error) {
+	client := testClient(func(_ *http.Request) (*http.Response, error) {
 		attempts++
 		if attempts == 1 {
-			return nil, errors.New("connection refused")
+			return nil, errTestConnectionRefused
 		}
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("search_empty.json"),
 		}, nil
 	})
 
-	_, err := client.SearchIssues(context.Background(), "project=TEST", 0, 50)
+	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -390,6 +419,8 @@ func TestRetry_OnNetworkError(t *testing.T) {
 }
 
 func TestContextCancellation(t *testing.T) {
+	t.Parallel()
+
 	cfg := config.JiraConfig{
 		BaseURL:         "https://jira.example.com",
 		Token:           "test-token",
@@ -401,7 +432,7 @@ func TestContextCancellation(t *testing.T) {
 
 	client := New(cfg)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	_, err := client.GetIssue(ctx, "TEST-123")
@@ -415,6 +446,8 @@ func TestContextCancellation(t *testing.T) {
 }
 
 func TestHeaders(t *testing.T) {
+	t.Parallel()
+
 	var capturedHeaders http.Header
 
 	client := testClient(func(req *http.Request) (*http.Response, error) {
@@ -425,7 +458,7 @@ func TestHeaders(t *testing.T) {
 		}, nil
 	})
 
-	_, err := client.SearchIssues(context.Background(), "project=TEST", 0, 50)
+	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -443,6 +476,8 @@ func TestHeaders(t *testing.T) {
 }
 
 func TestError_Formatting(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		err      *Error
