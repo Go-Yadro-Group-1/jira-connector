@@ -32,6 +32,7 @@ var (
 	insertStatusChangeQuery = mustQuery("insert_status_change.sql")
 )
 
+//nolint:revive
 type PostgresRepository struct {
 	db *sql.DB
 }
@@ -47,6 +48,7 @@ func isUniqueViolation(err error) bool {
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505"
 	}
+
 	return false
 }
 
@@ -59,6 +61,7 @@ func (r *PostgresRepository) InsertProject(ctx context.Context, project raw.Proj
 		if isUniqueViolation(err) {
 			return repository.ErrProjectAlreadyExists
 		}
+
 		return fmt.Errorf("insert project: %w", err)
 	}
 
@@ -74,6 +77,7 @@ func (r *PostgresRepository) InsertAuthor(ctx context.Context, author raw.Author
 		if isUniqueViolation(err) {
 			return repository.ErrAuthorAlreadyExists
 		}
+
 		return fmt.Errorf("insert author: %w", err)
 	}
 
@@ -107,7 +111,10 @@ func (r *PostgresRepository) InsertIssue(ctx context.Context, issue raw.Issue) e
 	return nil
 }
 
-func (r *PostgresRepository) InsertStatusChange(ctx context.Context, change raw.StatusChange) error {
+func (r *PostgresRepository) InsertStatusChange(
+	ctx context.Context,
+	change raw.StatusChange,
+) error {
 	_, err := r.db.ExecContext(ctx, insertStatusChangeQuery,
 		change.IssueID,
 		change.AuthorID,
