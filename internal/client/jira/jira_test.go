@@ -1,4 +1,4 @@
-package jira
+package jira_test
 
 import (
 	"context"
@@ -12,12 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 )
 
-var (
-	errTestConnectionRefused = errors.New("connection refused")
-)
+var errTestConnectionRefused = errors.New("connection refused")
 
 func getProjectRoot() string {
 	dir, err := os.Getwd()
@@ -43,7 +42,7 @@ func loadMockData(filename string) (io.ReadCloser, error) {
 		root = getProjectRoot()
 	}
 
-	path := filepath.Join(root, "testing", "mock-data", filename)
+	path := filepath.Join(root, "internal", "client", "jira", "testdata", filename)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -70,7 +69,7 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m.roundTripFunc(req)
 }
 
-func testClient(roundTripFunc func(req *http.Request) (*http.Response, error)) *Client {
+func testClient(roundTripFunc func(req *http.Request) (*http.Response, error)) *jira.Client {
 	cfg := config.JiraConfig{
 		BaseURL:         "https://jira.example.com",
 		Token:           "test-token",
@@ -80,9 +79,8 @@ func testClient(roundTripFunc func(req *http.Request) (*http.Response, error)) *
 		MaxResults:      50,
 	}
 
-	client := New(cfg)
-	client.client.Transport = &mockTransport{roundTripFunc: roundTripFunc}
-
+	client := jira.New(cfg)
+	client.SetTransport(&mockTransport{roundTripFunc: roundTripFunc})
 	return client
 }
 
@@ -430,7 +428,7 @@ func TestContextCancellation(t *testing.T) {
 		MaxResults:      50,
 	}
 
-	client := New(cfg)
+	client := jira.New(cfg)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
@@ -452,6 +450,7 @@ func TestHeaders(t *testing.T) {
 
 	client := testClient(func(req *http.Request) (*http.Response, error) {
 		capturedHeaders = req.Header
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       mustLoadMockData("search_empty.json"),
@@ -480,28 +479,30 @@ func TestError_Formatting(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		err      *Error
+		err      *jira.Error
 		contains string
 	}{
 		{
 			name:     "with message",
-			err:      &Error{StatusCode: 400, Message: "invalid request"},
+			err:      &jira.Error{StatusCode: 400, Message: "invalid request"},
 			contains: "Jira API: 400, message: invalid request",
 		},
 		{
 			name:     "with error messages",
-			err:      &Error{StatusCode: 400, ErrorMessages: []string{"field required"}},
+			err:      &jira.Error{StatusCode: 400, ErrorMessages: []string{"field required"}},
 			contains: "field required",
 		},
 		{
 			name:     "with status only",
-			err:      &Error{StatusCode: 404, Body: []byte("not found")},
+			err:      &jira.Error{StatusCode: 404, Body: []byte("not found")},
 			contains: "Not Found",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			errStr := tt.err.Error()
 			if !strings.Contains(errStr, tt.contains) {
 				t.Errorf("Error() = %s, want to contain %s", errStr, tt.contains)
