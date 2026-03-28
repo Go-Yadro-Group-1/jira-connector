@@ -1,8 +1,15 @@
 package sync
 
-//nolint:revive
-type SyncService struct{}
+import (
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
+)
 
-func New() (*SyncService, error) {
-	return &SyncService{}, nil
+type Service struct {
+	jiraClient *jira.Client
+	repo       *postgres.PostgresRepository
+}
+
+func NewService(jiraClient *jira.Client, repo *postgres.PostgresRepository) *Service {
+	return &Service{jiraClient: jiraClient, repo: repo}
 }
