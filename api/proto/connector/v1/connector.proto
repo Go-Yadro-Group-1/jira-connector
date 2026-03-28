@@ -5,78 +5,37 @@ package connector.v1;
 option go_package = "gen/proto/connector/v1;connectorv1";
 
 service ConnectorService {
-  rpc GetIssue(GetIssueRequest) returns (Issue);
-  rpc SearchIssues(SearchIssuesRequest) returns (SearchIssuesResponse);
-  rpc GetProjects(GetProjectsRequest) returns (GetProjectsResponse);
-  rpc GetProject(GetProjectRequest) returns (JiraProject);
+  rpc GetAvailableProjects(GetAvailableProjectsRequest) returns (GetAvailableProjectsResponse);
+  rpc DownloadProject(DownloadProjectRequest) returns (DownloadProjectResponse);
 }
 
-message GetIssueRequest {
-  string issue_key = 1;
-}
-
-message Issue {
-  string key = 1;
-  string id = 2;
-  string self = 3;
-  string fields_json = 4;
-  Changelog changelog = 5;
-}
-
-message Changelog {
-  repeated History histories = 1;
-}
-
-message History {
-  Author author = 1;
-  string created = 2;
-  repeated ChangeItem items = 3;
-}
-
-message Author {
-  string name = 1;
-  string display_name = 2;
-}
-
-message ChangeItem {
-  string field = 1;
-  string from_string = 2;
-  string to_string = 3;
-}
-
-message SearchIssuesRequest {
-  string jql = 1;
-  int32 start_at = 2;
-  int32 max_results = 3;
-}
-
-message SearchIssuesResponse {
-  repeated Issue issues = 1;
-  int32 total = 2;
-  int32 start_at = 3;
-  int32 max_results = 4;
-}
-
-message GetProjectsRequest {
+message GetAvailableProjectsRequest {
   string search_query = 1;
   int32 limit = 2;
   int32 page = 3;
 }
 
-message GetProjectsResponse {
+message JiraProject {
+  string key = 1;
+  string title = 2;
+  string self = 3;
+}
+
+message GetAvailableProjectsResponse {
   repeated JiraProject projects = 1;
   int32 total = 2;
   bool is_last = 3;
 }
 
-message JiraProject {
-  string key = 1;
-  string name = 2;
-  string self = 3;
+message DownloadProjectRequest {
+  string project_key = 1;
+  bool force = 2;
 }
 
-message GetProjectRequest {
-  string project_key = 1;
+message DownloadProjectResponse {
+  string sync_id = 1;
+  string status = 2;
+  string message = 3;
 }
 
 message ErrorResponse {
