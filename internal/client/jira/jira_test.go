@@ -81,6 +81,7 @@ func testClient(roundTripFunc func(req *http.Request) (*http.Response, error)) *
 
 	client := jira.New(cfg)
 	client.SetTransport(&mockTransport{roundTripFunc: roundTripFunc})
+
 	return client
 }
 
@@ -105,7 +106,6 @@ func TestGetIssue_Success(t *testing.T) {
 	})
 
 	issue, err := client.GetIssue(t.Context(), "TEST-123")
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,7 +128,6 @@ func TestGetIssue_WithChangelog(t *testing.T) {
 	})
 
 	issue, err := client.GetIssue(t.Context(), "TEST-123")
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -196,7 +195,6 @@ func TestSearchIssues_Success(t *testing.T) {
 	})
 
 	resp, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +217,6 @@ func TestSearchIssues_EmptyResult(t *testing.T) {
 	})
 
 	resp, err := client.SearchIssues(t.Context(), "project=EMPTY", 0, 50)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -263,7 +260,6 @@ func TestSearchIssues_UsesDefaultMaxResults(t *testing.T) {
 	})
 
 	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 0)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +289,6 @@ func TestGetProjects_SuccessPaginated(t *testing.T) {
 	})
 
 	resp, err := client.GetProjects(t.Context(), "", 10, 0)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -319,7 +314,6 @@ func TestGetProjects_SimpleListResponse(t *testing.T) {
 	})
 
 	resp, err := client.GetProjects(t.Context(), "", 10, 0)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +343,6 @@ func TestGetProjects_WithSearchQuery(t *testing.T) {
 	})
 
 	_, err := client.GetProjects(t.Context(), "test", 10, 0)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +373,6 @@ func TestRetry_OnTooManyRequests(t *testing.T) {
 	})
 
 	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -407,7 +399,6 @@ func TestRetry_OnNetworkError(t *testing.T) {
 	})
 
 	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,19 +449,27 @@ func TestHeaders(t *testing.T) {
 	})
 
 	_, err := client.SearchIssues(t.Context(), "project=TEST", 0, 50)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if capturedHeaders.Get("Accept") != "application/json" {
-		t.Errorf("expected Accept: application/json, got %s", capturedHeaders.Get("Accept"))
+		t.Errorf(
+			"expected Accept: application/json, got %s",
+			capturedHeaders.Get("Accept"),
+		)
 	}
 	if capturedHeaders.Get("Content-Type") != "application/json" {
-		t.Errorf("expected Content-Type: application/json, got %s", capturedHeaders.Get("Content-Type"))
+		t.Errorf(
+			"expected Content-Type: application/json, got %s",
+			capturedHeaders.Get("Content-Type"),
+		)
 	}
 	if capturedHeaders.Get("Authorization") != "Bearer test-token" {
-		t.Errorf("expected Authorization: Bearer test-token, got %s", capturedHeaders.Get("Authorization"))
+		t.Errorf(
+			"expected Authorization: Bearer test-token, got %s",
+			capturedHeaders.Get("Authorization"),
+		)
 	}
 }
 
@@ -499,13 +498,13 @@ func TestError_Formatting(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			errStr := tt.err.Error()
-			if !strings.Contains(errStr, tt.contains) {
-				t.Errorf("Error() = %s, want to contain %s", errStr, tt.contains)
+			errStr := testCase.err.Error()
+			if !strings.Contains(errStr, testCase.contains) {
+				t.Errorf("Error() = %s, want to contain %s", errStr, testCase.contains)
 			}
 		})
 	}
