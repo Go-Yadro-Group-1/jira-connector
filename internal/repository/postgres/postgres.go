@@ -32,12 +32,12 @@ var (
 	insertStatusChangeQuery = mustQuery("insert_status_change.sql")
 )
 
-type Repo struct {
+type PostgresRepository struct {
 	db *sql.DB
 }
 
-func New(db *sql.DB) *Repo {
-	return &Repo{
+func New(db *sql.DB) *PostgresRepository {
+	return &PostgresRepository{
 		db: db,
 	}
 }
@@ -50,7 +50,7 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
-func (r *Repo) InsertProject(ctx context.Context, project raw.Project) error {
+func (r *PostgresRepository) InsertProject(ctx context.Context, project raw.Project) error {
 	_, err := r.db.ExecContext(ctx, insertProjectQuery,
 		project.ID,
 		project.Title,
@@ -65,7 +65,7 @@ func (r *Repo) InsertProject(ctx context.Context, project raw.Project) error {
 	return nil
 }
 
-func (r *Repo) InsertAuthor(ctx context.Context, author raw.Author) error {
+func (r *PostgresRepository) InsertAuthor(ctx context.Context, author raw.Author) error {
 	_, err := r.db.ExecContext(ctx, insertAuthorQuery,
 		author.ID,
 		author.Name,
@@ -80,7 +80,7 @@ func (r *Repo) InsertAuthor(ctx context.Context, author raw.Author) error {
 	return nil
 }
 
-func (r *Repo) InsertIssue(ctx context.Context, issue raw.Issue) error {
+func (r *PostgresRepository) InsertIssue(ctx context.Context, issue raw.Issue) error {
 	_, err := r.db.ExecContext(ctx, insertIssueQuery,
 		issue.ID,
 		issue.ProjectID,
@@ -107,7 +107,7 @@ func (r *Repo) InsertIssue(ctx context.Context, issue raw.Issue) error {
 	return nil
 }
 
-func (r *Repo) InsertStatusChange(ctx context.Context, change raw.StatusChange) error {
+func (r *PostgresRepository) InsertStatusChange(ctx context.Context, change raw.StatusChange) error {
 	_, err := r.db.ExecContext(ctx, insertStatusChangeQuery,
 		change.IssueID,
 		change.AuthorID,
