@@ -105,6 +105,7 @@ func (r *PostgresRepository) InsertIssue(ctx context.Context, issue raw.Issue) e
 		if isUniqueViolation(err) {
 			return repository.ErrIssueAlreadyExists
 		}
+
 		return fmt.Errorf("insert issue: %w", err)
 	}
 
