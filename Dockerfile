@@ -10,6 +10,5 @@ COPY --from=0 /app/jira-connector /usr/local/bin/jira-connector
 EXPOSE 8080
 EXPOSE 50051
 EXPOSE 5432
-EXPOSE 5672
 
 ENTRYPOINT ["jira-connector"]
