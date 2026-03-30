@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: connector-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-jira_connector}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-jira_connector}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  connector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jira-connector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["run", "--project", "${JIRA_PROJECT_KEY:-DEMO}"]
+
+volumes:
+  postgres_data:
