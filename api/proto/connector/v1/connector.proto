@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package connector.v1;
+
+option go_package = "gen/proto/connector/v1;connectorv1";
+
+service ConnectorService {
+  rpc GetAvailableProjects(GetAvailableProjectsRequest) returns (GetAvailableProjectsResponse);
+  rpc DownloadProject(DownloadProjectRequest) returns (DownloadProjectResponse);
+}
+
+message GetAvailableProjectsRequest {
+  string search_query = 1;
+  int32 limit = 2;
+  int32 page = 3;
+}
+
+message JiraProject {
+  string key = 1;
+  string title = 2;
+  string self = 3;
+}
+
+message GetAvailableProjectsResponse {
+  repeated JiraProject projects = 1;
+  int32 total = 2;
+  bool is_last = 3;
+}
+
+message DownloadProjectRequest {
+  string project_key = 1;
+  bool force = 2;
+}
+
+message DownloadProjectResponse {
+  string sync_id = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message ErrorResponse {
+  ErrorCode code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+
+  ERROR_CODE_INVALID_ARGUMENT = 400;
+  ERROR_CODE_UNAUTHENTICATED = 401;
+  ERROR_CODE_PERMISSION_DENIED = 403;
+  ERROR_CODE_NOT_FOUND = 404;
+
+  ERROR_CODE_INTERNAL_ERROR = 500;
+  ERROR_CODE_UNAVAILABLE = 503;
+}
