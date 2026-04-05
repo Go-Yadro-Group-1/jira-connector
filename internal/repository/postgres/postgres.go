@@ -32,15 +32,94 @@ var (
 	insertStatusChangeQuery = mustQuery("insert_status_change.sql")
 )
 
+var (
+	errNestedTransaction = errors.New(
+		"cannot start nested transaction: already running in a transaction",
+	)
+	errUnexpectedQuerierType = errors.New(
+		"unexpected querier type: expected *sql.DB to begin transaction",
+	)
+	errCommitOutsideTx   = errors.New("commit called outside of transaction")
+	errRollbackOutsideTx = errors.New("rollback called outside of transaction")
+)
+
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 //nolint:revive
 type PostgresRepository struct {
-	db *sql.DB
+	db querier
 }
 
 func New(db *sql.DB) *PostgresRepository {
-	return &PostgresRepository{
-		db: db,
+	return &PostgresRepository{db: db}
+}
+
+func (r *PostgresRepository) NewTx(ctx context.Context) (*PostgresRepository, error) {
+	_, isAlreadyTx := r.db.(*sql.Tx)
+	if isAlreadyTx {
+		return nil, errNestedTransaction
 	}
+
+	db, isDB := r.db.(*sql.DB)
+	if !isDB {
+		return nil, errUnexpectedQuerierType
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	return &PostgresRepository{db: tx}, nil
+}
+
+func (r *PostgresRepository) Commit() error {
+	tx, isTx := r.db.(*sql.Tx)
+	if !isTx {
+		return errCommitOutsideTx
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (r *PostgresRepository) Rollback() error {
+	tx, isTx := r.db.(*sql.Tx)
+	if !isTx {
+		return errRollbackOutsideTx
+	}
+
+	if err := tx.Rollback(); err != nil {
+		return fmt.Errorf("rollback transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (r *PostgresRepository) WithTransaction(
+	ctx context.Context,
+	operation func(*PostgresRepository) error,
+) error {
+	txRepo, err := r.NewTx(ctx)
+	if err != nil {
+		return err
+	}
+
+	execErr := operation(txRepo)
+	if execErr != nil {
+		_ = txRepo.Rollback()
+
+		return execErr
+	}
+
+	return txRepo.Commit()
 }
 
 func isUniqueViolation(err error) bool {
