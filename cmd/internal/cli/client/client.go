@@ -21,7 +21,7 @@ func main() {
 	os.Exit(code)
 }
 
-func run() int { //nolint:cyclop
+func run() int {
 	addr := flag.String("addr", "localhost:50052", "gRPC server address")
 	cmd := flag.String("cmd", "projects", "command: projects or download")
 	key := flag.String("key", "", "project key (for download)")
