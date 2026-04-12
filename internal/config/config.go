@@ -1,11 +1,30 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
+
+const (
+	DefaultHost       = "0.0.0.0"
+	DefaultPort       = 50052
+	DefaultMaxResults = 50
+	DefaultMinRetry   = 1000
+	DefaultMaxRetry   = 60000
+	DefaultRateLimit  = 25.0
+	DefaultConfigPath = "config/dev.yaml"
+	DefaultLogLevel   = "info"
+	DefaultDBHost     = "localhost"
+	DefaultDBPort     = 5432
+	DefaultDBUser     = "postgres"
+	DefaultDBPassword = "password"
+	DefaultDBName     = "jira_connector"
+)
+
+var ErrJiraBaseURLRequired = errors.New("jira.baseUrl is required")
 
 type JiraConfig struct {
 	BaseURL         string  `yaml:"baseUrl"`
@@ -32,16 +51,123 @@ type AppConfig struct {
 	} `yaml:"app"`
 }
 
-func LoadDevConfig() (*AppConfig, error) {
-	data, err := os.ReadFile("config/dev.yaml")
+func Load(path string) (*AppConfig, error) {
+	if path == "" {
+		path = envOr("CONNECTOR_CONFIG", DefaultConfigPath)
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
 	var cfg AppConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config YAML: %w", err)
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	applyDefaults(&cfg)
+	overrideFromEnv(&cfg)
+
+	if err := validate(&cfg); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
 	return &cfg, nil
+}
+
+func applyDefaults(cfg *AppConfig) {
+	applyJiraDefaults(&cfg.Jira)
+	applyDBDefaults(&cfg.DB)
+
+	if cfg.App.LogLevel == "" {
+		cfg.App.LogLevel = DefaultLogLevel
+	}
+}
+
+func applyJiraDefaults(cfg *JiraConfig) {
+	if cfg.MaxResults <= 0 {
+		cfg.MaxResults = DefaultMaxResults
+	}
+	if cfg.MinRetryDelay <= 0 {
+		cfg.MinRetryDelay = DefaultMinRetry
+	}
+	if cfg.MaxRetryDelay <= 0 {
+		cfg.MaxRetryDelay = DefaultMaxRetry
+	}
+	if cfg.RateLimitPerSec <= 0 {
+		cfg.RateLimitPerSec = DefaultRateLimit
+	}
+}
+
+func applyDBDefaults(cfg *DBConfig) {
+	if cfg.Host == "" {
+		cfg.Host = DefaultDBHost
+	}
+	if cfg.Port == 0 {
+		cfg.Port = DefaultDBPort
+	}
+	if cfg.User == "" {
+		cfg.User = DefaultDBUser
+	}
+	if cfg.Password == "" {
+		cfg.Password = DefaultDBPassword
+	}
+	if cfg.DBName == "" {
+		cfg.DBName = DefaultDBName
+	}
+}
+
+func overrideFromEnv(cfg *AppConfig) {
+	if v := os.Getenv("JIRA_BASE_URL"); v != "" {
+		cfg.Jira.BaseURL = v
+	}
+	if v := os.Getenv("JIRA_TOKEN"); v != "" {
+		cfg.Jira.Token = v
+	}
+	if v := os.Getenv("DB_HOST"); v != "" {
+		cfg.DB.Host = v
+	}
+	if v := os.Getenv("DB_PORT"); v != "" {
+		cfg.DB.Port = parseInt(v, DefaultDBPort)
+	}
+	if v := os.Getenv("DB_USER"); v != "" {
+		cfg.DB.User = v
+	}
+	if v := os.Getenv("DB_PASSWORD"); v != "" {
+		cfg.DB.Password = v
+	}
+	if v := os.Getenv("DB_NAME"); v != "" {
+		cfg.DB.DBName = v
+	}
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		cfg.App.LogLevel = v
+	}
+}
+
+func validate(cfg *AppConfig) error {
+	var errs []error
+
+	if cfg.Jira.BaseURL == "" {
+		errs = append(errs, ErrJiraBaseURLRequired)
+	}
+
+	return errors.Join(errs...)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+
+	return fallback
+}
+
+func parseInt(s string, fallback int) int {
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return fallback
+	}
+
+	return n
 }
