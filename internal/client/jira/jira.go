@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultTimeout         = 30 * time.Second
-	defaultRateLimit       = 10
+	defaultRateLimit       = 25
 	defaultMaxResults      = 50
 	defaultMinRetryDelay   = 1 * time.Second
 	defaultMaxRetryDelay   = 60 * time.Second
@@ -55,6 +55,31 @@ type Issue struct {
 	ID        string          `json:"id"`
 	Fields    json.RawMessage `json:"fields"`
 	Changelog *Changelog      `json:"changelog,omitempty"`
+}
+
+type IssueFields struct {
+	Summary        string `json:"summary"`
+	Description    string `json:"description"`
+	Created        string `json:"created"`
+	Updated        string `json:"updated"`
+	Resolutiondate string `json:"resolutiondate"`
+	TimeSpent      int    `json:"timespent"`
+
+	IssueType struct {
+		Name string `json:"name"`
+	} `json:"issuetype"`
+
+	Priority struct {
+		Name string `json:"name"`
+	} `json:"priority"`
+
+	Status struct {
+		Name string `json:"name"`
+	} `json:"status"`
+
+	Creator Author `json:"creator"`
+
+	Assignee Author `json:"assignee"`
 }
 
 type Changelog struct {
