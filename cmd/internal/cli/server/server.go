@@ -11,7 +11,9 @@ import (
 	connectorv1 "github.com/Go-Yadro-Group-1/Jira-Connector/gen/proto/connector/v1"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/database"
 	grpchandler "github.com/Go-Yadro-Group-1/Jira-Connector/internal/handler/grpc"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/service/sync"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -87,8 +89,20 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
+	db, err := database.NewConnection(cmd.Context(), cfg.DB)
+	if err != nil {
+		return fmt.Errorf("init database: %w", err)
+	}
+
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Failed to close database: %v", closeErr)
+		}
+	}()
+
 	jiraClient := jira.New(cfg.Jira)
-	svc := sync.NewService(jiraClient)
+	repo := postgres.New(db)
+	svc := sync.NewService(jiraClient, repo)
 	handler := grpchandler.New(svc)
 
 	grpcServer := grpc.NewServer()

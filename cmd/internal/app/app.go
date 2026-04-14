@@ -2,27 +2,40 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/database"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/service/sync"
 )
 
 type App struct {
 	jiraClient *jira.Client
 	syncer     *sync.Service
+	db         *sql.DB
 	projectKey string
 }
 
-func New(cfg config.JiraConfig, projectKey string) (*App, error) {
-	jiraClient := jira.New(cfg)
-	syncer := sync.NewService(jiraClient)
+func New(cfg config.AppConfig, projectKey string) (*App, error) {
+	jiraClient := jira.New(cfg.Jira)
+
+	ctx := context.Background()
+	db, err := database.NewConnection(ctx, cfg.DB)
+	if err != nil {
+		return nil, fmt.Errorf("init database: %w", err)
+	}
+
+	repo := postgres.New(db)
+	syncer := sync.NewService(jiraClient, repo)
 
 	return &App{
 		jiraClient: jiraClient,
 		syncer:     syncer,
+		db:         db,
 		projectKey: projectKey,
 	}, nil
 }
@@ -40,6 +53,10 @@ func (a *App) Run() <-chan error {
 }
 
 func (a *App) Close() error {
+	if a.db != nil {
+		return a.db.Close()
+	}
+
 	return nil
 }
 
