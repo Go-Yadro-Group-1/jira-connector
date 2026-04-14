@@ -51,7 +51,7 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 }
 
 func (wp *WorkerPool) Run(ctx context.Context) (chan<- Task, <-chan TaskResult) {
-	for i := 0; i < wp.workerCount; i++ {
+	for i := range wp.workerCount {
 		wp.wg.Add(1)
 		go wp.worker(ctx, i)
 	}
@@ -78,20 +78,24 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 }
 
-func (wp *WorkerPool) Stats() PoolStats {
-	return wp.stats
+func (wp *WorkerPool) Stats() *PoolStats {
+	return &wp.stats
 }
 
-func (wp *WorkerPool) worker(ctx context.Context, id int) {
+func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
 	defer wp.wg.Done()
 
-	log.Printf("[workerpool] Worker %d started", id)
+	log.Printf("[workerpool] Worker %d started", identifier)
 
 	for {
 		select {
 		case task, ok := <-wp.taskCh:
 			if !ok {
-				log.Printf("[workerpool] Worker %d stopping: task channel closed", id)
+				log.Printf(
+					"[workerpool] Worker %d stopping: task channel closed",
+					identifier,
+				)
+
 				return
 			}
 
@@ -104,7 +108,12 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 
 			if err != nil {
 				wp.stats.Failed.Add(1)
-				log.Printf("[workerpool] Worker %d: task %s failed: %v", id, task.ID, err)
+				log.Printf(
+					"[workerpool] Worker %d: task %s failed: %v",
+					identifier,
+					task.ID,
+					err,
+				)
 			} else {
 				wp.stats.Processed.Add(1)
 			}
@@ -112,12 +121,20 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 			select {
 			case wp.resultCh <- result:
 			case <-ctx.Done():
-				log.Printf("[workerpool] Worker %d: context done while sending result", id)
+				log.Printf(
+					"[workerpool] Worker %d: context done while sending result",
+					identifier,
+				)
+
 				return
 			}
 
 		case <-ctx.Done():
-			log.Printf("[workerpool] Worker %d stopping: context done", id)
+			log.Printf(
+				"[workerpool] Worker %d stopping: context done",
+				identifier,
+			)
+
 			return
 		}
 	}

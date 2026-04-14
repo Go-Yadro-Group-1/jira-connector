@@ -24,18 +24,18 @@ func New(cfg config.AppConfig, projectKey string) (*App, error) {
 	jiraClient := jira.New(cfg.Jira)
 
 	ctx := context.Background()
-	db, err := database.NewConnection(ctx, cfg.DB)
+	database, err := database.NewConnection(ctx, cfg.DB)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
 
-	repo := postgres.New(db)
+	repo := postgres.New(database)
 	syncer := sync.NewService(jiraClient, repo)
 
 	return &App{
 		jiraClient: jiraClient,
 		syncer:     syncer,
-		db:         db,
+		db:         database,
 		projectKey: projectKey,
 	}, nil
 }
@@ -54,7 +54,9 @@ func (a *App) Run() <-chan error {
 
 func (a *App) Close() error {
 	if a.db != nil {
-		return a.db.Close()
+		if err := a.db.Close(); err != nil {
+			return fmt.Errorf("close database: %w", err)
+		}
 	}
 
 	return nil

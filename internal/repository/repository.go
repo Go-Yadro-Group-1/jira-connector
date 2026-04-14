@@ -11,10 +11,6 @@ var (
 	ErrProjectAlreadyExists = errors.New("project already exists")
 	ErrAuthorAlreadyExists  = errors.New("author already exists")
 	ErrIssueAlreadyExists   = errors.New("issue already exists")
-
-	ErrProjectNotFound = errors.New("project not found")
-	ErrAuthorNotFound  = errors.New("author not found")
-	ErrIssueNotFound   = errors.New("issue not found")
 )
 
 type Repository interface {

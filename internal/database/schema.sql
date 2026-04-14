@@ -1,9 +1,5 @@
--- Схема базы данных Jira Connector
-
--- Создаем схему raw
 CREATE SCHEMA IF NOT EXISTS raw;
 
--- Таблица проектов
 CREATE TABLE IF NOT EXISTS raw.project (
     id BIGINT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -11,14 +7,12 @@ CREATE TABLE IF NOT EXISTS raw.project (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Таблица авторов
 CREATE TABLE IF NOT EXISTS raw.author (
     id BIGINT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Таблица задач
 CREATE TABLE IF NOT EXISTS raw.issue (
     id BIGINT PRIMARY KEY,
     project_id BIGINT REFERENCES raw.project(id),
@@ -38,7 +32,6 @@ CREATE TABLE IF NOT EXISTS raw.issue (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Таблица изменений статусов
 CREATE TABLE IF NOT EXISTS raw.status_changes (
     id SERIAL PRIMARY KEY,
     issue_id BIGINT REFERENCES raw.issue(id),
@@ -49,7 +42,6 @@ CREATE TABLE IF NOT EXISTS raw.status_changes (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Индексы для ускорения
 CREATE INDEX IF NOT EXISTS idx_issue_project_id ON raw.issue(project_id);
 CREATE INDEX IF NOT EXISTS idx_issue_status ON raw.issue(status);
 CREATE INDEX IF NOT EXISTS idx_status_changes_issue_id ON raw.status_changes(issue_id);
