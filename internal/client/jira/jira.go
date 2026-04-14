@@ -195,6 +195,10 @@ func New(cfg config.JiraConfig) *Client {
 	}
 }
 
+func (c *Client) SetTransport(transport http.RoundTripper) {
+	c.client.Transport = transport
+}
+
 func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	urlStr := fmt.Sprintf("/rest/api/2/issue/%s?expand=changelog", key)
 
