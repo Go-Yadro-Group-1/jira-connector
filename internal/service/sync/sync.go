@@ -46,8 +46,8 @@ func (s *Service) GetAvailableProjects(
 
 const defaultPageSize = 50
 
-func (s *Service) SyncProject(ctx context.Context, projectKey string, force bool) error {
-	log.Printf("Starting sync for project %q (force=%v)", projectKey, force)
+func (s *Service) SyncProject(ctx context.Context, projectKey string) error {
+	log.Printf("Starting sync for project %q", projectKey)
 
 	jql := "project=" + projectKey
 

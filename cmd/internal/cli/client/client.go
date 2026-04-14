@@ -25,7 +25,6 @@ func run() int {
 	addr := flag.String("addr", "localhost:50052", "gRPC server address")
 	cmd := flag.String("cmd", "projects", "command: projects or download")
 	key := flag.String("key", "", "project key (for download)")
-	force := flag.Bool("force", false, "force re-download (for download)")
 	search := flag.String("search", "", "search query (for projects)")
 	limit := flag.Int("limit", defaultLimit, "limit per page (for projects)")
 	page := flag.Int("page", 0, "page number (for projects)")
@@ -52,7 +51,7 @@ func run() int {
 			return 1
 		}
 
-		return downloadProject(ctx, client, *key, *force)
+		return downloadProject(ctx, client, *key)
 	default:
 		log.Printf("unknown command: %s (use 'projects' or 'download')", *cmd)
 
@@ -94,11 +93,9 @@ func downloadProject(
 	ctx context.Context,
 	client connectorv1.ConnectorServiceClient,
 	key string,
-	force bool,
 ) int {
 	resp, err := client.DownloadProject(ctx, &connectorv1.DownloadProjectRequest{
 		ProjectKey: key,
-		Force:      force,
 	})
 	if err != nil {
 		log.Printf("DownloadProject error: %v", err)

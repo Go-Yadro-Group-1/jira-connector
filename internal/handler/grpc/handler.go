@@ -18,7 +18,7 @@ type Service interface {
 		searchQuery string,
 		limit, page int,
 	) (*jira.ProjectsResponse, error)
-	SyncProject(ctx context.Context, projectKey string, force bool) error
+	SyncProject(ctx context.Context, projectKey string) error
 }
 
 type Handler struct {
@@ -76,9 +76,7 @@ func (h *Handler) DownloadProject(
 		)
 	}
 
-	force := req.GetForce()
-
-	err := h.svc.SyncProject(ctx, projectKey, force)
+	err := h.svc.SyncProject(ctx, projectKey)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}

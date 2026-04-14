@@ -29,7 +29,6 @@ message GetAvailableProjectsResponse {
 
 message DownloadProjectRequest {
   string project_key = 1;
-  bool force = 2;
 }
 
 message DownloadProjectResponse {
