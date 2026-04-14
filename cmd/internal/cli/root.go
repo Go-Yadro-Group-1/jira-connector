@@ -3,6 +3,7 @@ package cli
 import (
 	_ "embed"
 
+	"github.com/Go-Yadro-Group-1/Jira-Connector/cmd/internal/cli/server"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,8 @@ func NewRootCmd() *cobra.Command {
 		Long:  embeddedRootLongData,
 		Args:  cobra.NoArgs,
 	}
+
+	rootCmd.AddCommand(server.NewCommand())
 
 	return rootCmd
 }

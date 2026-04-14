@@ -265,7 +265,6 @@ func (x *GetAvailableProjectsResponse) GetIsLast() bool {
 type DownloadProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectKey    string                 `protobuf:"bytes,1,opt,name=project_key,json=projectKey,proto3" json:"project_key,omitempty"`
-	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -305,13 +304,6 @@ func (x *DownloadProjectRequest) GetProjectKey() string {
 		return x.ProjectKey
 	}
 	return ""
-}
-
-func (x *DownloadProjectRequest) GetForce() bool {
-	if x != nil {
-		return x.Force
-	}
-	return false
 }
 
 type DownloadProjectResponse struct {
@@ -450,11 +442,10 @@ const file_connector_v1_connector_proto_rawDesc = "" +
 	"\x1cGetAvailableProjectsResponse\x125\n" +
 	"\bprojects\x18\x01 \x03(\v2\x19.connector.v1.JiraProjectR\bprojects\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x17\n" +
-	"\ais_last\x18\x03 \x01(\bR\x06isLast\"O\n" +
+	"\ais_last\x18\x03 \x01(\bR\x06isLast\"9\n" +
 	"\x16DownloadProjectRequest\x12\x1f\n" +
 	"\vproject_key\x18\x01 \x01(\tR\n" +
-	"projectKey\x12\x14\n" +
-	"\x05force\x18\x02 \x01(\bR\x05force\"d\n" +
+	"projectKey\"d\n" +
 	"\x17DownloadProjectResponse\x12\x17\n" +
 	"\async_id\x18\x01 \x01(\tR\x06syncId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +

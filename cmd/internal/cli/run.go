@@ -27,7 +27,6 @@ const (
 
 var (
 	errGetConfigFlag   = errors.New("get config path") //nolint:unused
-	errReadConfig      = errors.New("read config file")
 	errValidateConfig  = errors.New("validate config") //nolint:unused
 	errInitApplication = errors.New("create new fs manager")
 	errNoProjectKey    = errors.New("flag --project is required")
@@ -37,16 +36,21 @@ func NewRunCmd() *cobra.Command {
 	runCmd := &cobra.Command{
 		Use:     "run",
 		Aliases: []string{"start", "launch"},
-		Short:   "Run File System Manager",
+		Short:   "Run Jira Connector",
 		Long:    embeddedRunLongData,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { //nolint:revive
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
 
-			cfg, err := config.LoadDevConfig()
+			cfgFile, err := cmd.Flags().GetString(flagConfigFile)
 			if err != nil {
-				return errors.Join(errReadConfig, err)
+				return fmt.Errorf("get config flag: %w", err)
+			}
+
+			cfg, err := config.Load(cfgFile)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
 			}
 
 			projectKey, err := cmd.Flags().GetString(flagProjectKey)
