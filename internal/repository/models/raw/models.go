@@ -3,20 +3,20 @@ package raw
 import "time"
 
 type Project struct {
-	ID    int
+	ID    int64
 	Title string
 }
 
 type Author struct {
-	ID   int
+	ID   int64
 	Name string
 }
 
 type Issue struct {
-	ID          int
-	ProjectID   int
-	AuthorID    int
-	AssigneeID  *int
+	ID          int64
+	ProjectID   int64
+	AuthorID    int64
+	AssigneeID  *int64
 	Key         string
 	Summary     *string
 	Description *string
@@ -30,8 +30,8 @@ type Issue struct {
 }
 
 type StatusChange struct {
-	IssueID    int
-	AuthorID   int
+	IssueID    int64
+	AuthorID   int64
 	ChangeTime time.Time
 	FromStatus *string
 	ToStatus   *string

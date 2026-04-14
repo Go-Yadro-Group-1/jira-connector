@@ -61,7 +61,7 @@ func NewRunCmd() *cobra.Command {
 				return errNoProjectKey
 			}
 
-			connector, err := app.New(cfg.Jira, projectKey)
+			connector, err := app.New(*cfg, projectKey)
 			if err != nil {
 				return errors.Join(errInitApplication, err)
 			}
