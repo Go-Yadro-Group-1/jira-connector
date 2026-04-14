@@ -8,24 +8,16 @@ import (
 	"sync/atomic"
 )
 
-// Task представляет задачу для обработки в worker pool.
 type Task struct {
-	// ID уникальный идентификатор задачи.
-	ID string
-	// Payload полезные данные задачи.
+	ID      string
 	Payload any
 }
 
-// TaskResult представляет результат обработки задачи.
 type TaskResult struct {
-	// TaskID идентификатор выполненной задачи.
 	TaskID string
-	// Err ошибка, возникшая при обработке (nil если успех).
-	Err error
+	Err    error
 }
 
-// WorkerPool управляет пулом воркеров для параллельной обработки задач.
-// Поддерживает graceful shutdown через контекст и закрытие канала задач.
 type WorkerPool struct {
 	workerCount int
 	taskCh      chan Task
@@ -35,21 +27,20 @@ type WorkerPool struct {
 	stats       PoolStats
 }
 
-// PoolStats содержит статистику работы пула.
 type PoolStats struct {
 	Processed atomic.Int64
 	Failed    atomic.Int64
 }
 
-// TaskProcessor - интерфейс для обработки задач.
 type TaskProcessor interface {
 	Process(ctx context.Context, task Task) error
 }
 
-// New создает новый worker pool.
-// workerCount - количество параллельных воркеров.
-// queueSize - размер буфера каналов задач и результатов.
-// processor - обработчик задач.
+type IssueTaskPayload struct {
+	IssueKey  string
+	ProjectID int64
+}
+
 func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	return &WorkerPool{
 		workerCount: workerCount,
@@ -59,8 +50,6 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	}
 }
 
-// Run запускает worker pool и возвращает каналы для отправки задач и получения результатов.
-// Закрытие resultCh происходит после завершения всех воркеров.
 func (wp *WorkerPool) Run(ctx context.Context) (chan<- Task, <-chan TaskResult) {
 	for i := 0; i < wp.workerCount; i++ {
 		wp.wg.Add(1)
@@ -75,7 +64,6 @@ func (wp *WorkerPool) Run(ctx context.Context) (chan<- Task, <-chan TaskResult) 
 	return wp.taskCh, wp.resultCh
 }
 
-// Submit отправляет задачу в пул. Возвращает ошибку если пул остановлен.
 func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	select {
 	case wp.taskCh <- task:
@@ -85,13 +73,11 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	}
 }
 
-// Stop gracefully останавливает worker pool и ждет завершения всех воркеров.
 func (wp *WorkerPool) Stop() {
 	close(wp.taskCh)
 	wp.wg.Wait()
 }
 
-// Stats возвращает статистику пула.
 func (wp *WorkerPool) Stats() PoolStats {
 	return wp.stats
 }
@@ -99,13 +85,13 @@ func (wp *WorkerPool) Stats() PoolStats {
 func (wp *WorkerPool) worker(ctx context.Context, id int) {
 	defer wp.wg.Done()
 
-	log.Printf("Worker %d started", id)
+	log.Printf("[workerpool] Worker %d started", id)
 
 	for {
 		select {
 		case task, ok := <-wp.taskCh:
 			if !ok {
-				log.Printf("Worker %d stopping: task channel closed", id)
+				log.Printf("[workerpool] Worker %d stopping: task channel closed", id)
 				return
 			}
 
@@ -118,7 +104,7 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 
 			if err != nil {
 				wp.stats.Failed.Add(1)
-				log.Printf("Worker %d: task %s failed: %v", id, task.ID, err)
+				log.Printf("[workerpool] Worker %d: task %s failed: %v", id, task.ID, err)
 			} else {
 				wp.stats.Processed.Add(1)
 			}
@@ -126,12 +112,12 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 			select {
 			case wp.resultCh <- result:
 			case <-ctx.Done():
-				log.Printf("Worker %d: context done while sending result", id)
+				log.Printf("[workerpool] Worker %d: context done while sending result", id)
 				return
 			}
 
 		case <-ctx.Done():
-			log.Printf("Worker %d stopping: context done", id)
+			log.Printf("[workerpool] Worker %d stopping: context done", id)
 			return
 		}
 	}
