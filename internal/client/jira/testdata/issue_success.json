@@ -1,0 +1,9 @@
+{
+  "key": "TEST-123",
+  "id": "12345",
+  "self": "https://jira.example.com/issue/TEST-123",
+  "fields": {
+    "summary": "Test issue",
+    "status": {"name": "Open"}
+  }
+}

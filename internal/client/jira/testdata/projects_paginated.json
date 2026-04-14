@@ -1,0 +1,10 @@
+{
+  "values": [
+    {"key": "TEST", "name": "Test Project", "self": "url1"},
+    {"key": "DEV", "name": "Dev Project", "self": "url2"}
+  ],
+  "total": 2,
+  "startAt": 0,
+  "maxResults": 10,
+  "isLast": true
+}
