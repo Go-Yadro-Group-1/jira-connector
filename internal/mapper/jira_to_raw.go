@@ -2,12 +2,15 @@ package mapper
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/models/raw"
 )
+
+const hashMultiplier = 31
 
 func MapProjectToRaw(proj jira.Project) raw.Project {
 	return raw.Project{
@@ -25,16 +28,16 @@ func MapAuthorToRaw(author jira.Author) raw.Author {
 
 func MapIssueToRaw(issue jira.Issue, projectID int64, fields *jira.IssueFields) (raw.Issue, error) {
 	if err := json.Unmarshal(issue.Fields, fields); err != nil {
-		return raw.Issue{}, err
+		return raw.Issue{}, fmt.Errorf("unmarshal issue fields: %w", err)
 	}
 
-	id, err := strconv.ParseInt(issue.ID, 10, 64)
+	identifier, err := strconv.ParseInt(issue.ID, 10, 64)
 	if err != nil {
-		return raw.Issue{}, err
+		return raw.Issue{}, fmt.Errorf("parse issue ID %q: %w", issue.ID, err)
 	}
 
 	rawIssue := raw.Issue{
-		ID:          id,
+		ID:          identifier,
 		ProjectID:   projectID,
 		AuthorID:    HashID(fields.Creator.Name),
 		Key:         issue.Key,
@@ -84,15 +87,14 @@ func MapChangelogToRaw(issue jira.Issue, issueID int64) []raw.StatusChange {
 	return changes
 }
 
-// HashID генерирует числовой ID из строки.
-func HashID(s string) int64 {
-	if s == "" {
+func HashID(str string) int64 {
+	if str == "" {
 		return 0
 	}
 
 	var hash int64
-	for _, c := range s {
-		hash = hash*31 + int64(c)
+	for _, c := range str {
+		hash = hash*hashMultiplier + int64(c)
 		if hash < 0 {
 			hash = -hash
 		}
@@ -101,39 +103,39 @@ func HashID(s string) int64 {
 	return hash
 }
 
-func strPtr(s string) *string {
-	if s == "" {
+func strPtr(str string) *string {
+	if str == "" {
 		return nil
 	}
 
-	return &s
+	return &str
 }
 
-func intPtr(i int) *int {
-	if i == 0 {
+func intPtr(integer int) *int {
+	if integer == 0 {
 		return nil
 	}
 
-	return &i
+	return &integer
 }
 
-func int64Ptr(i int64) *int64 {
-	if i == 0 {
+func int64Ptr(integer int64) *int64 {
+	if integer == 0 {
 		return nil
 	}
 
-	return &i
+	return &integer
 }
 
-func parseTime(s string) *time.Time {
-	if s == "" {
+func parseTime(str string) *time.Time {
+	if str == "" {
 		return nil
 	}
 
-	t, err := time.Parse(time.RFC3339, s)
+	parsedTime, err := time.Parse(time.RFC3339, str)
 	if err != nil {
 		return nil
 	}
 
-	return &t
+	return &parsedTime
 }

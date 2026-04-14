@@ -89,19 +89,19 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
-	db, err := database.NewConnection(cmd.Context(), cfg.DB)
+	database, err := database.NewConnection(cmd.Context(), cfg.DB)
 	if err != nil {
 		return fmt.Errorf("init database: %w", err)
 	}
 
 	defer func() {
-		if closeErr := db.Close(); closeErr != nil {
+		if closeErr := database.Close(); closeErr != nil {
 			log.Printf("Failed to close database: %v", closeErr)
 		}
 	}()
 
 	jiraClient := jira.New(cfg.Jira)
-	repo := postgres.New(db)
+	repo := postgres.New(database)
 	svc := sync.NewService(jiraClient, repo)
 	handler := grpchandler.New(svc)
 

@@ -4,7 +4,7 @@ jira:
   maxResults: 50
   minRetryDelay: 1000
   maxRetryDelay: 60000
-  rateLimitPerSec: 5.0    
+  rateLimitPerSec: 25.0    
 
 db:
   host: "localhost"
