@@ -102,90 +102,6 @@ func (s *Service) SyncProject(ctx context.Context, projectKey string) error {
 	return s.syncProjectIssues(ctx, projectKey, projectID)
 }
 
-func (s *Service) syncProjectIssues(ctx context.Context, projectKey string, projectID int64) error {
-	jql := "project=" + projectKey
-
-	workerp := workerpool.New(s.workerCount, s.queueSize, s)
-	taskCh, resultCh := workerp.Run(ctx)
-
-	go s.submitTasks(ctx, jql, projectID, taskCh)
-
-	successCount, failCount := s.processResults(resultCh)
-
-	stats := workerp.Stats()
-	log.Printf(
-		"Synced project %q: %d issues (processed=%d, failed=%d)",
-		projectKey,
-		successCount+failCount,
-		stats.Processed.Load(),
-		stats.Failed.Load(),
-	)
-
-	return nil
-}
-
-func (s *Service) submitTasks(ctx context.Context, jql string, projectID int64, taskCh chan<- workerpool.Task) {
-	defer close(taskCh)
-
-	var submitted int
-	startAt := 0
-
-	for {
-		resp, err := s.jiraClient.SearchIssues(ctx, jql, startAt, defaultPageSize)
-		if err != nil {
-			log.Printf("[workerpool] SearchIssues error: %v", err)
-
-			return
-		}
-
-		for _, issue := range resp.Issues {
-			select {
-			case taskCh <- workerpool.Task{
-				ID: issue.Key,
-				Payload: workerpool.IssueTaskPayload{
-					IssueKey:  issue.Key,
-					ProjectID: projectID,
-				},
-			}:
-				submitted++
-			case <-ctx.Done():
-				return
-			}
-		}
-
-		if startAt+len(resp.Issues) >= resp.Total {
-			break
-		}
-
-		startAt += len(resp.Issues)
-	}
-
-	log.Printf("[workerpool] Submitted %d tasks", submitted)
-}
-
-func (s *Service) processResults(resultCh <-chan workerpool.TaskResult) (int, int) {
-	var successCount, failCount int
-
-	for result := range resultCh {
-		if result.Err != nil {
-			failCount++
-		} else {
-			successCount++
-		}
-
-		if (successCount+failCount)%progressLogInterval == 0 {
-			log.Printf(
-				"[workerpool] Progress: %d completed (%d ok, %d failed)",
-				successCount+failCount,
-				successCount,
-				failCount,
-			)
-		}
-	}
-
-	return successCount, failCount
-}
-
 func (s *Service) Process(ctx context.Context, task workerpool.Task) error {
 	payload, ok := task.Payload.(workerpool.IssueTaskPayload)
 	if !ok {
@@ -313,4 +229,93 @@ func (s *Service) ensureAuthorFromIssue(
 	}
 
 	return nil
+}
+
+func (s *Service) syncProjectIssues(ctx context.Context, projectKey string, projectID int64) error {
+	jql := "project=" + projectKey
+
+	workerp := workerpool.New(s.workerCount, s.queueSize, s)
+	taskCh, resultCh := workerp.Run(ctx)
+
+	go s.submitTasks(ctx, jql, projectID, taskCh)
+
+	successCount, failCount := s.processResults(resultCh)
+
+	stats := workerp.Stats()
+	log.Printf(
+		"Synced project %q: %d issues (processed=%d, failed=%d)",
+		projectKey,
+		successCount+failCount,
+		stats.Processed.Load(),
+		stats.Failed.Load(),
+	)
+
+	return nil
+}
+
+func (s *Service) submitTasks(
+	ctx context.Context,
+	jql string,
+	projectID int64,
+	taskCh chan<- workerpool.Task,
+) {
+	defer close(taskCh)
+
+	var submitted int
+	startAt := 0
+
+	for {
+		resp, err := s.jiraClient.SearchIssues(ctx, jql, startAt, defaultPageSize)
+		if err != nil {
+			log.Printf("[workerpool] SearchIssues error: %v", err)
+
+			return
+		}
+
+		for _, issue := range resp.Issues {
+			select {
+			case taskCh <- workerpool.Task{
+				ID: issue.Key,
+				Payload: workerpool.IssueTaskPayload{
+					IssueKey:  issue.Key,
+					ProjectID: projectID,
+				},
+			}:
+				submitted++
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		if startAt+len(resp.Issues) >= resp.Total {
+			break
+		}
+
+		startAt += len(resp.Issues)
+	}
+
+	log.Printf("[workerpool] Submitted %d tasks", submitted)
+}
+
+func (s *Service) processResults(resultCh <-chan workerpool.TaskResult) (int, int) {
+	var successCount, failCount int
+
+	for result := range resultCh {
+		if result.Err != nil {
+			failCount++
+		} else {
+			successCount++
+		}
+
+		if (successCount+failCount)%progressLogInterval == 0 {
+			log.Printf(
+				"[workerpool] Progress: %d completed (%d ok, %d failed)",
+				successCount+failCount,
+				successCount,
+				failCount,
+			)
+		}
+	}
+
+	return successCount, failCount
 }
