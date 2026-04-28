@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -14,7 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
-	// Migrations driver."
+	// Register pgx/v5 driver for golang-migrate.
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	// PostgreSQL driver for database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -56,6 +57,7 @@ func NewConnection(ctx context.Context, cfg config.DBConfig) (*sql.DB, error) {
 
 	if err := runMigrations(dsn); err != nil {
 		database.Close()
+
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
@@ -70,14 +72,15 @@ func runMigrations(originalDSN string) error {
 		return fmt.Errorf("create iofs driver: %w", err)
 	}
 
-	m, err := migrate.NewWithSourceInstance("iofs", driver, migrateDSN)
+	migrator, err := migrate.NewWithSourceInstance("iofs", driver, migrateDSN)
 	if err != nil {
 		return fmt.Errorf("init migrate: %w", err)
 	}
-	defer m.Close()
+	defer migrator.Close()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
+
 	return nil
 }
