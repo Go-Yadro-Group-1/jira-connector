@@ -47,6 +47,11 @@ type JiraClient interface {
 	) (*jira.Issue, error)
 }
 
+type IssueTaskPayload struct {
+	IssueKey  string
+	ProjectID int64
+}
+
 type Service struct {
 	jiraClient  JiraClient
 	repo        repository.Repository
@@ -103,7 +108,7 @@ func (s *Service) SyncProject(ctx context.Context, projectKey string) error {
 }
 
 func (s *Service) Process(ctx context.Context, task workerpool.Task) error {
-	payload, ok := task.Payload.(workerpool.IssueTaskPayload)
+	payload, ok := task.Payload.(IssueTaskPayload)
 	if !ok {
 		return fmt.Errorf("%w: %T", errInvalidPayloadType, task.Payload)
 	}
@@ -276,7 +281,7 @@ func (s *Service) submitTasks(
 			select {
 			case taskCh <- workerpool.Task{
 				ID: issue.Key,
-				Payload: workerpool.IssueTaskPayload{
+				Payload: IssueTaskPayload{
 					IssueKey:  issue.Key,
 					ProjectID: projectID,
 				},
