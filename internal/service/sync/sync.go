@@ -240,9 +240,9 @@ func (s *Service) syncProjectIssues(ctx context.Context, projectKey string, proj
 	jql := "project=" + projectKey
 
 	workerp := workerpool.New(s.workerCount, s.queueSize, s)
-	taskCh, resultCh := workerp.Run(ctx)
+	resultCh := workerp.Run(ctx)
 
-	go s.submitTasks(ctx, jql, projectID, taskCh)
+	go s.submitTasks(ctx, jql, projectID, workerp)
 
 	successCount, failCount := s.processResults(resultCh)
 
@@ -262,14 +262,21 @@ func (s *Service) submitTasks(
 	ctx context.Context,
 	jql string,
 	projectID int64,
-	taskCh chan<- workerpool.Task,
+	workerp *workerpool.WorkerPool,
 ) {
-	defer close(taskCh)
+	defer workerp.Stop()
 
 	var submitted int
 	startAt := 0
 
 	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[workerpool] Context done, stop submitting")
+			return
+		default:
+		}
+
 		resp, err := s.jiraClient.SearchIssues(ctx, jql, startAt, defaultPageSize)
 		if err != nil {
 			log.Printf("[workerpool] SearchIssues error: %v", err)
@@ -278,18 +285,25 @@ func (s *Service) submitTasks(
 		}
 
 		for _, issue := range resp.Issues {
-			select {
-			case taskCh <- workerpool.Task{
+			task := workerpool.Task{
 				ID: issue.Key,
 				Payload: IssueTaskPayload{
 					IssueKey:  issue.Key,
 					ProjectID: projectID,
 				},
-			}:
-				submitted++
-			case <-ctx.Done():
-				return
 			}
+
+			if err := workerp.Submit(ctx, task); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					log.Printf("[workerpool] Submit canceled: %v", err)
+					return
+				}
+
+				log.Printf("[workerpool] Submit error for task %s: %v", issue.Key, err)
+
+				continue
+			}
+			submitted++
 		}
 
 		if startAt+len(resp.Issues) >= resp.Total {
