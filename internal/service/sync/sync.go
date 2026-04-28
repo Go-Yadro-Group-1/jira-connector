@@ -273,6 +273,7 @@ func (s *Service) submitTasks(
 		select {
 		case <-ctx.Done():
 			log.Printf("[workerpool] Context done, stop submitting")
+
 			return
 		default:
 		}
@@ -296,6 +297,7 @@ func (s *Service) submitTasks(
 			if err := workerp.Submit(ctx, task); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					log.Printf("[workerpool] Submit canceled: %v", err)
+
 					return
 				}
 
