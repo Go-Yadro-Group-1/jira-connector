@@ -2,10 +2,16 @@ package workerpool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
+)
+
+var (
+	errPoolStopped = errors.New("worker pool is stopped")
+	errSubmitPanic = errors.New("submit task: panic recovered")
 )
 
 type Task struct {
@@ -59,7 +65,7 @@ func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 
 func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	if wp.stopped.Load() {
-		return fmt.Errorf("worker pool is stopped")
+		return errPoolStopped
 	}
 
 	var panicked bool
@@ -72,7 +78,7 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	select {
 	case wp.taskCh <- task:
 		if panicked {
-			return fmt.Errorf("submit task: panic recovered")
+			return errSubmitPanic
 		}
 
 		return nil
