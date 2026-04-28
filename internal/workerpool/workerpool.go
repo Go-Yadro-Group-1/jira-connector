@@ -36,11 +36,6 @@ type TaskProcessor interface {
 	Process(ctx context.Context, task Task) error
 }
 
-type IssueTaskPayload struct {
-	IssueKey  string
-	ProjectID int64
-}
-
 func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	return &WorkerPool{
 		workerCount: workerCount,
