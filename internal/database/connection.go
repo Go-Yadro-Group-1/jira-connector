@@ -3,19 +3,25 @@ package database
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+
+	// Migrations driver."
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	// PostgreSQL driver for database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-//go:embed schema.sql
-var schemaSQL string
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 const (
 	maxOpenConns    = 25
@@ -48,20 +54,30 @@ func NewConnection(ctx context.Context, cfg config.DBConfig) (*sql.DB, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	if err := initSchema(ctx, database); err != nil {
+	if err := runMigrations(dsn); err != nil {
 		database.Close()
-
-		return nil, fmt.Errorf("init schema: %w", err)
+		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
 	return database, nil
 }
 
-func initSchema(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, schemaSQL)
+func runMigrations(originalDSN string) error {
+	migrateDSN := strings.Replace(originalDSN, "postgres://", "pgx5://", 1)
+
+	driver, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("execute schema: %w", err)
+		return fmt.Errorf("create iofs driver: %w", err)
 	}
 
+	m, err := migrate.NewWithSourceInstance("iofs", driver, migrateDSN)
+	if err != nil {
+		return fmt.Errorf("init migrate: %w", err)
+	}
+	defer m.Close()
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("apply migrations: %w", err)
+	}
 	return nil
 }
