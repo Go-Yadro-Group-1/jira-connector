@@ -25,6 +25,9 @@ type WorkerPool struct {
 	wg          sync.WaitGroup
 	processor   TaskProcessor
 	stats       PoolStats
+
+	once    sync.Once
+	stopped atomic.Bool
 }
 
 type PoolStats struct {
@@ -45,23 +48,33 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	}
 }
 
-func (wp *WorkerPool) Run(ctx context.Context) (chan<- Task, <-chan TaskResult) {
+func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 	for i := range wp.workerCount {
 		wp.wg.Add(1)
 		go wp.worker(ctx, i)
 	}
 
-	go func() {
-		wp.wg.Wait()
-		close(wp.resultCh)
-	}()
-
-	return wp.taskCh, wp.resultCh
+	return wp.resultCh
 }
 
 func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
+	if wp.stopped.Load() {
+		return fmt.Errorf("worker pool is stopped")
+	}
+
+	var panicked bool
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+		}
+	}()
+
 	select {
 	case wp.taskCh <- task:
+		if panicked {
+			return fmt.Errorf("submit task: panic recovered")
+		}
+
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("submit task: %w", ctx.Err())
@@ -69,8 +82,12 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 }
 
 func (wp *WorkerPool) Stop() {
-	close(wp.taskCh)
-	wp.wg.Wait()
+	wp.once.Do(func() {
+		wp.stopped.Store(true)
+		close(wp.taskCh)
+		wp.wg.Wait()
+		close(wp.resultCh)
+	})
 }
 
 func (wp *WorkerPool) Stats() *PoolStats {
