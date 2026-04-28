@@ -28,8 +28,8 @@ type WorkerPool struct {
 }
 
 type PoolStats struct {
-	Processed atomic.Int64
-	Failed    atomic.Int64
+	Processed atomic.Uint64
+	Failed    atomic.Uint64
 }
 
 type TaskProcessor interface {
