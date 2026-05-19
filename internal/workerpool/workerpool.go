@@ -7,6 +7,8 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -28,7 +30,6 @@ type WorkerPool struct {
 	workerCount int
 	taskCh      chan Task
 	resultCh    chan TaskResult
-	wg          sync.WaitGroup
 	processor   TaskProcessor
 	stats       PoolStats
 
@@ -54,13 +55,26 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	}
 }
 
-func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
+func (wp *WorkerPool) Run(ctx context.Context) (<-chan TaskResult, error) {
+	g, ctx := errgroup.WithContext(ctx)
+
 	for i := range wp.workerCount {
-		wp.wg.Add(1)
-		go wp.worker(ctx, i)
+		i := i
+
+		g.Go(func() error {
+			return wp.worker(ctx, i)
+		})
 	}
 
-	return wp.resultCh
+	go func() {
+		if err := g.Wait(); err != nil {
+			log.Printf("[workerpool] Worker pool stopped due to error: %v", err)
+		}
+
+		wp.Stop()
+	}()
+
+	return wp.resultCh, nil
 }
 
 func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
@@ -91,7 +105,6 @@ func (wp *WorkerPool) Stop() {
 	wp.once.Do(func() {
 		wp.stopped.Store(true)
 		close(wp.taskCh)
-		wp.wg.Wait()
 		close(wp.resultCh)
 	})
 }
@@ -100,9 +113,7 @@ func (wp *WorkerPool) Stats() *PoolStats {
 	return &wp.stats
 }
 
-func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
-	defer wp.wg.Done()
-
+func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 	log.Printf("[workerpool] Worker %d started", identifier)
 
 	for {
@@ -114,7 +125,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
 					identifier,
 				)
 
-				return
+				return nil
 			}
 
 			err := wp.processor.Process(ctx, task)
@@ -132,6 +143,10 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
 					task.ID,
 					err,
 				)
+
+				return fmt.Errorf(
+					"worker %d: task %s failed: %w", identifier, task.ID, err
+				)
 			} else {
 				wp.stats.Processed.Add(1)
 			}
@@ -144,7 +159,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
 					identifier,
 				)
 
-				return
+				return ctx.Err()
 			}
 
 		case <-ctx.Done():
@@ -153,7 +168,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
 				identifier,
 			)
 
-			return
+			return ctx.Err()
 		}
 	}
 }
