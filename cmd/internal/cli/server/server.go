@@ -114,6 +114,7 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 		if lis != nil {
 			_ = lis.Close()
 		}
+
 		return fmt.Errorf("init database: %w", err)
 	}
 
