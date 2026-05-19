@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net"
@@ -23,6 +24,25 @@ const (
 	defaultHost = "0.0.0.0"
 	defaultPort = 50052
 )
+
+type Server struct {
+	grpcServer *grpc.Server
+	lis        net.Listener
+	db         *sql.DB
+	log        *log.Logger
+}
+
+func (s *Server) Close() {
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
+
+	if s.db != nil {
+		if err := s.db.Close(); err != nil {
+			s.log.Printf("Failed to close database: %v", err)
+		}
+	}
+}
 
 //nolint:exhaustruct
 func NewCommand() *cobra.Command {
@@ -91,14 +111,11 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 
 	database, err := database.NewConnection(cmd.Context(), cfg.DB)
 	if err != nil {
+		if lis != nil {
+			_ = lis.Close()
+		}
 		return fmt.Errorf("init database: %w", err)
 	}
-
-	defer func() {
-		if closeErr := database.Close(); closeErr != nil {
-			log.Printf("Failed to close database: %v", closeErr)
-		}
-	}()
 
 	jiraClient := jira.New(cfg.Jira)
 	repo := postgres.New(database)
@@ -108,16 +125,23 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 	grpcServer := grpc.NewServer()
 	connectorv1.RegisterConnectorServiceServer(grpcServer, handler)
 
+	srv := &Server{
+		grpcServer: grpcServer,
+		lis:        lis,
+		db:         database,
+		log:        log.Default(),
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-quit
-		log.Println("shutting down gRPC server...")
-		grpcServer.GracefulStop()
+		srv.log.Println("shutting down gRPC server...")
+		srv.Close()
 	}()
 
-	log.Printf("gRPC server listening on %s\n", addr)
+	srv.log.Printf("gRPC server listening on %s\n", addr)
 
 	err = grpcServer.Serve(lis)
 	if err != nil {
