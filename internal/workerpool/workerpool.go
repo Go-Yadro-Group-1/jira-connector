@@ -21,9 +21,43 @@ type Task struct {
 	Payload any
 }
 
+func NewTask(id string, payload any) Task {
+	return Task{
+		ID:      id,
+		Payload: payload,
+	}
+}
+
+func (t Task) GetID() string {
+	return t.ID
+}
+
+func (t Task) GetPayload() any {
+	return t.Payload
+}
+
 type TaskResult struct {
 	TaskID string
 	Err    error
+}
+
+func NewTaskResult(taskID string, err error) TaskResult {
+	return TaskResult{
+		TaskID: taskID,
+		Err:    err,
+	}
+}
+
+func (tr TaskResult) GetTaskID() string {
+	return tr.TaskID
+}
+
+func (tr TaskResult) GetErr() error {
+	return tr.Err
+}
+
+func (tr TaskResult) IsSuccess() bool {
+	return tr.Err == nil
 }
 
 type WorkerPool struct {
@@ -130,10 +164,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 
 			err := wp.processor.Process(ctx, task)
 
-			result := TaskResult{
-				TaskID: task.ID,
-				Err:    err,
-			}
+			result := NewTaskResult(task.ID, err)
 
 			if err != nil {
 				wp.stats.Failed.Add(1)

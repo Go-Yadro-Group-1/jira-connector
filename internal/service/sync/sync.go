@@ -240,7 +240,11 @@ func (s *Service) syncProjectIssues(ctx context.Context, projectKey string, proj
 	jql := "project=" + projectKey
 
 	workerp := workerpool.New(s.workerCount, s.queueSize, s)
-	resultCh := workerp.Run(ctx)
+
+	resultCh, err := workerp.Run(ctx)
+	if err != nil {
+		return fmt.Errorf("start worker pool: %w", err)
+	}
 
 	go s.submitTasks(ctx, jql, projectID, workerp)
 
@@ -286,13 +290,10 @@ func (s *Service) submitTasks(
 		}
 
 		for _, issue := range resp.Issues {
-			task := workerpool.Task{
-				ID: issue.Key,
-				Payload: IssueTaskPayload{
-					IssueKey:  issue.Key,
-					ProjectID: projectID,
-				},
-			}
+			task := workerpool.NewTask(issue.Key, IssueTaskPayload{
+				IssueKey:  issue.Key,
+				ProjectID: projectID,
+			})
 
 			if err := workerp.Submit(ctx, task); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -322,7 +323,7 @@ func (s *Service) processResults(resultCh <-chan workerpool.TaskResult) (int, in
 	var successCount, failCount int
 
 	for result := range resultCh {
-		if result.Err != nil {
+		if result.IsSuccess() {
 			failCount++
 		} else {
 			successCount++
