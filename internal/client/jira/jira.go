@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultTimeout         = 30 * time.Second
+	defaultTimeout         = 10 * time.Minute
 	defaultRateLimit       = 25
 	defaultMaxResults      = 50
 	defaultMinRetryDelay   = 1 * time.Second
@@ -104,6 +104,7 @@ type Author struct {
 }
 
 type Project struct {
+	ID   string `json:"id"`
 	Key  string `json:"key"`
 	Name string `json:"name"`
 	Self string `json:"self"`

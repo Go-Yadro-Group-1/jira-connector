@@ -144,9 +144,10 @@ func (x *GetAvailableProjectsRequest) GetPage() int32 {
 
 type JiraProject struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Self          string                 `protobuf:"bytes,3,opt,name=self,proto3" json:"self,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Self          string                 `protobuf:"bytes,4,opt,name=self,proto3" json:"self,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -179,6 +180,13 @@ func (x *JiraProject) ProtoReflect() protoreflect.Message {
 // Deprecated: Use JiraProject.ProtoReflect.Descriptor instead.
 func (*JiraProject) Descriptor() ([]byte, []int) {
 	return file_connector_v1_connector_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *JiraProject) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 func (x *JiraProject) GetKey() string {
@@ -308,9 +316,10 @@ func (x *DownloadProjectRequest) GetProjectKey() string {
 
 type DownloadProjectResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SyncId        string                 `protobuf:"bytes,1,opt,name=sync_id,json=syncId,proto3" json:"sync_id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	SyncId        string                 `protobuf:"bytes,2,opt,name=sync_id,json=syncId,proto3" json:"sync_id,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -343,6 +352,13 @@ func (x *DownloadProjectResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use DownloadProjectResponse.ProtoReflect.Descriptor instead.
 func (*DownloadProjectResponse) Descriptor() ([]byte, []int) {
 	return file_connector_v1_connector_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DownloadProjectResponse) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
 }
 
 func (x *DownloadProjectResponse) GetSyncId() string {
@@ -434,22 +450,25 @@ const file_connector_v1_connector_proto_rawDesc = "" +
 	"\x1bGetAvailableProjectsRequest\x12!\n" +
 	"\fsearch_query\x18\x01 \x01(\tR\vsearchQuery\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x12\n" +
-	"\x04page\x18\x03 \x01(\x05R\x04page\"I\n" +
-	"\vJiraProject\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
-	"\x04self\x18\x03 \x01(\tR\x04self\"\x84\x01\n" +
+	"\x04page\x18\x03 \x01(\x05R\x04page\"Y\n" +
+	"\vJiraProject\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x12\n" +
+	"\x04self\x18\x04 \x01(\tR\x04self\"\x84\x01\n" +
 	"\x1cGetAvailableProjectsResponse\x125\n" +
 	"\bprojects\x18\x01 \x03(\v2\x19.connector.v1.JiraProjectR\bprojects\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x17\n" +
 	"\ais_last\x18\x03 \x01(\bR\x06isLast\"9\n" +
 	"\x16DownloadProjectRequest\x12\x1f\n" +
 	"\vproject_key\x18\x01 \x01(\tR\n" +
-	"projectKey\"d\n" +
-	"\x17DownloadProjectResponse\x12\x17\n" +
-	"\async_id\x18\x01 \x01(\tR\x06syncId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xd6\x01\n" +
+	"projectKey\"\x83\x01\n" +
+	"\x17DownloadProjectResponse\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
+	"\async_id\x18\x02 \x01(\tR\x06syncId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\"\xd6\x01\n" +
 	"\rErrorResponse\x12+\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x17.connector.v1.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12B\n" +
