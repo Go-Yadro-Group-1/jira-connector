@@ -13,8 +13,9 @@ import (
 const hashMultiplier = 31
 
 func MapProjectToRaw(proj jira.Project) raw.Project {
+	id, _ := strconv.ParseInt(proj.ID, 10, 64)
 	return raw.Project{
-		ID:    HashID(proj.Key),
+		ID:    id,
 		Title: proj.Name,
 	}
 }

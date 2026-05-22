@@ -38,12 +38,14 @@ func (t Task) GetPayload() any {
 
 type TaskResult struct {
 	TaskID string
+	Result interface{}
 	Err    error
 }
 
-func NewTaskResult(taskID string, err error) TaskResult {
+func NewTaskResult(taskID string, result interface{}, err error) TaskResult {
 	return TaskResult{
 		TaskID: taskID,
+		Result: result,
 		Err:    err,
 	}
 }
@@ -77,7 +79,7 @@ type PoolStats struct {
 }
 
 type TaskProcessor interface {
-	Process(ctx context.Context, task Task) error
+	Process(ctx context.Context, task Task) (interface{}, error)
 }
 
 func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
@@ -89,14 +91,14 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 	}
 }
 
-func (wp *WorkerPool) Run(ctx context.Context) (<-chan TaskResult, error) {
+func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 	g, ctx := errgroup.WithContext(ctx)
 
 	for i := range wp.workerCount {
-		i := i
-
 		g.Go(func() error {
-			return wp.worker(ctx, i)
+			wp.worker(ctx, i)
+
+			return nil
 		})
 	}
 
@@ -108,7 +110,7 @@ func (wp *WorkerPool) Run(ctx context.Context) (<-chan TaskResult, error) {
 		wp.Stop()
 	}()
 
-	return wp.resultCh, nil
+	return wp.resultCh
 }
 
 func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
@@ -162,9 +164,8 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 				return nil
 			}
 
-			err := wp.processor.Process(ctx, task)
-
-			result := NewTaskResult(task.ID, err)
+			res, err := wp.processor.Process(ctx, task)
+			result := NewTaskResult(task.ID, res, err)
 
 			if err != nil {
 				wp.stats.Failed.Add(1)
@@ -173,10 +174,6 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 					identifier,
 					task.ID,
 					err,
-				)
-
-				return fmt.Errorf(
-					"worker %d: task %s failed: %w", identifier, task.ID, err,
 				)
 			} else {
 				wp.stats.Processed.Add(1)

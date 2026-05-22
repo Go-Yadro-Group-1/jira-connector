@@ -18,7 +18,7 @@ type Service interface {
 		searchQuery string,
 		limit, page int,
 	) (*jira.ProjectsResponse, error)
-	SyncProject(ctx context.Context, projectKey string) error
+	SyncProject(ctx context.Context, projectKey string) (string, error)
 }
 
 type Handler struct {
@@ -51,6 +51,7 @@ func (h *Handler) GetAvailableProjects(
 	projects := make([]*connectorv1.JiraProject, 0, len(projResp.Values))
 	for _, proj := range projResp.Values {
 		projects = append(projects, &connectorv1.JiraProject{
+			Id:    proj.ID,
 			Key:   proj.Key,
 			Title: proj.Name,
 			Self:  proj.Self,
@@ -76,15 +77,16 @@ func (h *Handler) DownloadProject(
 		)
 	}
 
-	err := h.svc.SyncProject(ctx, projectKey)
+	projectID, err := h.svc.SyncProject(ctx, projectKey)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
 
 	return &connectorv1.DownloadProjectResponse{
-		SyncId:  projectKey,
-		Status:  "completed",
-		Message: fmt.Sprintf("Project %s synced successfully", projectKey),
+		ProjectId: projectID,
+		SyncId:    projectKey,
+		Status:    "completed",
+		Message:   fmt.Sprintf("Project %s synced successfully", projectKey),
 	}, nil
 }
 

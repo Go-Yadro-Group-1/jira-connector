@@ -67,7 +67,7 @@ func (a *App) run() error {
 
 	log.Printf("Syncing project %q...", a.projectKey)
 
-	err := a.syncer.SyncProject(ctx, a.projectKey)
+	_, err := a.syncer.SyncProject(ctx, a.projectKey)
 	if err != nil {
 		return fmt.Errorf("sync project failed: %w", err)
 	}
