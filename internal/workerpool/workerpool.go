@@ -176,7 +176,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 				)
 
 				return fmt.Errorf(
-					"worker %d: task %s failed: %w", identifier, task.ID, err
+					"worker %d: task %s failed: %w", identifier, task.ID, err,
 				)
 			} else {
 				wp.stats.Processed.Add(1)
