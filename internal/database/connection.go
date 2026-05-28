@@ -49,13 +49,15 @@ func NewConnection(ctx context.Context, cfg config.DBConfig) (*sql.DB, error) {
 	database.SetMaxIdleConns(maxIdleConns)
 	database.SetConnMaxLifetime(connMaxLifetime)
 
-	if err := database.PingContext(ctx); err != nil {
+	err = database.PingContext(ctx)
+	if err != nil {
 		database.Close()
 
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	if err := runMigrations(dsn); err != nil {
+	err = runMigrations(dsn)
+	if err != nil {
 		database.Close()
 
 		return nil, fmt.Errorf("run migrations: %w", err)
@@ -78,7 +80,8 @@ func runMigrations(originalDSN string) error {
 	}
 	defer migrator.Close()
 
-	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	err = migrator.Up()
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 

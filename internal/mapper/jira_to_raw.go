@@ -14,6 +14,7 @@ const hashMultiplier = 31
 
 func MapProjectToRaw(proj jira.Project) raw.Project {
 	id, _ := strconv.ParseInt(proj.ID, 10, 64)
+
 	return raw.Project{
 		ID:    id,
 		Title: proj.Name,
@@ -28,7 +29,8 @@ func MapAuthorToRaw(author jira.Author) raw.Author {
 }
 
 func MapIssueToRaw(issue jira.Issue, projectID int64, fields *jira.IssueFields) (raw.Issue, error) {
-	if err := json.Unmarshal(issue.Fields, fields); err != nil {
+	err := json.Unmarshal(issue.Fields, fields)
+	if err != nil {
 		return raw.Issue{}, fmt.Errorf("unmarshal issue fields: %w", err)
 	}
 
@@ -66,6 +68,7 @@ func MapChangelogToRaw(issue jira.Issue, issueID int64) []raw.StatusChange {
 	}
 
 	var changes []raw.StatusChange
+
 	for _, history := range issue.Changelog.Histories {
 		changeTime, err := time.Parse(time.RFC3339, history.Created)
 		if err != nil {

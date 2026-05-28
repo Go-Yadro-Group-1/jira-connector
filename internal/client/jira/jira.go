@@ -235,7 +235,9 @@ func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	defer resp.Body.Close()
 
 	var issue Issue
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+
+	err = json.NewDecoder(resp.Body).Decode(&issue)
+	if err != nil {
 		return nil, fmt.Errorf("decode Jira issue response: %w", err)
 	}
 
@@ -266,7 +268,9 @@ func (c *Client) SearchIssues(
 	defer resp.Body.Close()
 
 	var searchResp SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+
+	err = json.NewDecoder(resp.Body).Decode(&searchResp)
+	if err != nil {
 		return nil, fmt.Errorf("decode Jira search response: %w", err)
 	}
 
@@ -322,14 +326,17 @@ func parseProjectsResponse(resp *http.Response) (*ProjectsResponse, error) {
 	}
 
 	var projResp ProjectsResponse
+
 	var simpleList []Project
 
-	if err := json.Unmarshal(bodyBytes, &simpleList); err == nil {
+	unmarshalErr := json.Unmarshal(bodyBytes, &simpleList)
+	if unmarshalErr == nil {
 		projResp.Values = simpleList
 		projResp.Total = len(simpleList)
 		projResp.IsLast = true
 	} else {
-		if err := json.Unmarshal(bodyBytes, &projResp); err != nil {
+		err = json.Unmarshal(bodyBytes, &projResp)
+		if err != nil {
 			return nil, fmt.Errorf("decode projects response: %w", err)
 		}
 	}
@@ -348,7 +355,8 @@ func (c *Client) handleErrorResponse(resp *http.Response) error {
 		Body:       body,
 	}
 
-	if err := json.Unmarshal(body, errAPI); err != nil {
+	unmarshalErr := json.Unmarshal(body, errAPI)
+	if unmarshalErr != nil {
 		errAPI.Message = string(body)
 	}
 
@@ -361,25 +369,28 @@ func (c *Client) do(
 	body io.Reader,
 ) (*http.Response, error) {
 	var lastErr error
+
 	delay := c.minRetryDelay
 
 	for attempt := 0; ; attempt++ {
-		if err := c.limiter.Wait(ctx); err != nil {
+		err := c.limiter.Wait(ctx)
+		if err != nil {
 			return nil, fmt.Errorf("rate limiter wait failed: %w", err)
 		}
 
-		req, err := http.NewRequest(method, c.baseURL+path, body)
+		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 		if err != nil {
 			return nil, fmt.Errorf("create HTTP request: %w", err)
 		}
 
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
+
 		if c.token != "" {
 			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
 
-		resp, err := c.client.Do(req.WithContext(ctx))
+		resp, err := c.client.Do(req)
 
 		action, newDelay, errResp := c.handleResponse(ctx, resp, err, delay, lastErr)
 
@@ -443,7 +454,8 @@ func (c *Client) handleNetworkError(
 		)
 	}
 
-	if waitErr := c.waitWithBackoff(ctx, delay); waitErr != nil {
+	waitErr := c.waitWithBackoff(ctx, delay)
+	if waitErr != nil {
 		return actionError, delay, waitErr
 	}
 
@@ -457,8 +469,10 @@ func (c *Client) handleRetryStatus(
 ) (responseAction, time.Duration, error) {
 	resp.Body.Close()
 
-	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-		if sec, convErr := strconv.Atoi(retryAfter); convErr == nil {
+	retryAfter := resp.Header.Get("Retry-After")
+	if retryAfter != "" {
+		sec, convErr := strconv.Atoi(retryAfter)
+		if convErr == nil {
 			delay = time.Duration(sec) * time.Second
 		}
 	}
@@ -473,7 +487,8 @@ func (c *Client) handleRetryStatus(
 		)
 	}
 
-	if waitErr := c.waitWithBackoff(ctx, delay); waitErr != nil {
+	waitErr := c.waitWithBackoff(ctx, delay)
+	if waitErr != nil {
 		return actionError, delay, waitErr
 	}
 

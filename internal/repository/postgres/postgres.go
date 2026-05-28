@@ -83,7 +83,8 @@ func (r *PostgresRepository) Commit() error {
 		return errCommitOutsideTx
 	}
 
-	if err := tx.Commit(); err != nil {
+	err := tx.Commit()
+	if err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
@@ -96,7 +97,8 @@ func (r *PostgresRepository) Rollback() error {
 		return errRollbackOutsideTx
 	}
 
-	if err := tx.Rollback(); err != nil {
+	err := tx.Rollback()
+	if err != nil {
 		return fmt.Errorf("rollback transaction: %w", err)
 	}
 

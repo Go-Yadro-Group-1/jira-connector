@@ -25,13 +25,16 @@ func getProjectRoot() string {
 	}
 
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		_, err := os.Stat(filepath.Join(dir, "go.mod"))
+		if err == nil {
 			return dir
 		}
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			panic("go.mod not found")
 		}
+
 		dir = parent
 	}
 }
@@ -92,9 +95,11 @@ func TestGetIssue_Success(t *testing.T) {
 		if req.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", req.Method)
 		}
+
 		if !strings.Contains(req.URL.Path, "/rest/api/2/issue/TEST-123") {
 			t.Errorf("unexpected path: %s", req.URL.Path)
 		}
+
 		if req.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("expected Bearer token, got %s", req.Header.Get("Authorization"))
 		}
@@ -109,9 +114,11 @@ func TestGetIssue_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if issue.Key != "TEST-123" {
 		t.Errorf("expected key TEST-123, got %s", issue.Key)
 	}
+
 	if issue.ID != "12345" {
 		t.Errorf("expected id 12345, got %s", issue.ID)
 	}
@@ -131,9 +138,11 @@ func TestGetIssue_WithChangelog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if issue.Changelog == nil {
 		t.Fatal("expected changelog, got nil")
 	}
+
 	if len(issue.Changelog.Histories) != 1 {
 		t.Errorf("expected 1 history, got %d", len(issue.Changelog.Histories))
 	}
@@ -150,10 +159,10 @@ func TestGetIssue_NotFound(t *testing.T) {
 	})
 
 	_, err := client.GetIssue(t.Context(), "TEST-999")
-
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "Issue does not exist") {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -170,10 +179,10 @@ func TestGetIssue_Unauthorized(t *testing.T) {
 	})
 
 	_, err := client.GetIssue(t.Context(), "TEST-123")
-
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "Unauthorized") {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -198,9 +207,11 @@ func TestSearchIssues_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if resp.Total != 2 {
 		t.Errorf("expected total 2, got %d", resp.Total)
 	}
+
 	if len(resp.Issues) != 2 {
 		t.Errorf("expected 2 issues, got %d", len(resp.Issues))
 	}
@@ -220,9 +231,11 @@ func TestSearchIssues_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if resp.Total != 0 {
 		t.Errorf("expected total 0, got %d", resp.Total)
 	}
+
 	if len(resp.Issues) != 0 {
 		t.Errorf("expected 0 issues, got %d", len(resp.Issues))
 	}
@@ -239,7 +252,6 @@ func TestSearchIssues_InvalidJQL(t *testing.T) {
 	})
 
 	_, err := client.SearchIssues(t.Context(), "invalid jql", 0, 50)
-
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -263,6 +275,7 @@ func TestSearchIssues_UsesDefaultMaxResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if capturedMaxResults != "50" {
 		t.Errorf("expected maxResults=50, got %s", capturedMaxResults)
 	}
@@ -278,6 +291,7 @@ func TestGetProjects_SuccessPaginated(t *testing.T) {
 		if startAt != "0" {
 			t.Errorf("expected startAt=0, got %s", startAt)
 		}
+
 		if maxResults != "10" {
 			t.Errorf("expected maxResults=10, got %s", maxResults)
 		}
@@ -292,12 +306,15 @@ func TestGetProjects_SuccessPaginated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if resp.Total != 2 {
 		t.Errorf("expected total 2, got %d", resp.Total)
 	}
+
 	if len(resp.Values) != 2 {
 		t.Errorf("expected 2 projects, got %d", len(resp.Values))
 	}
+
 	if !resp.IsLast {
 		t.Error("expected isLast true, got false")
 	}
@@ -317,9 +334,11 @@ func TestGetProjects_SimpleListResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if len(resp.Values) != 2 {
 		t.Errorf("expected 2 projects, got %d", len(resp.Values))
 	}
+
 	if !resp.IsLast {
 		t.Error("expected isLast true for simple list")
 	}
@@ -346,6 +365,7 @@ func TestGetProjects_WithSearchQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if capturedQuery != "test" {
 		t.Errorf("expected query=test, got %s", capturedQuery)
 	}
@@ -376,6 +396,7 @@ func TestRetry_OnTooManyRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if attempts != 2 {
 		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
@@ -402,6 +423,7 @@ func TestRetry_OnNetworkError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if attempts != 2 {
 		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
@@ -425,10 +447,10 @@ func TestContextCancellation(t *testing.T) {
 	defer cancel()
 
 	_, err := client.GetIssue(ctx, "TEST-123")
-
 	if err == nil {
 		t.Fatal("expected context cancellation error, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "context") {
 		t.Errorf("expected context error, got %v", err)
 	}
@@ -459,12 +481,14 @@ func TestHeaders(t *testing.T) {
 			capturedHeaders.Get("Accept"),
 		)
 	}
+
 	if capturedHeaders.Get("Content-Type") != "application/json" {
 		t.Errorf(
 			"expected Content-Type: application/json, got %s",
 			capturedHeaders.Get("Content-Type"),
 		)
 	}
+
 	if capturedHeaders.Get("Authorization") != "Bearer test-token" {
 		t.Errorf(
 			"expected Authorization: Bearer test-token, got %s",

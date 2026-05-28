@@ -57,6 +57,7 @@ func NewRunCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to get project flag: %w", err)
 			}
+
 			if projectKey == "" {
 				return errNoProjectKey
 			}
