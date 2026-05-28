@@ -11,4 +11,4 @@ EXPOSE 8080
 EXPOSE 50051
 EXPOSE 5432
 
-ENTRYPOINT ["jira-connector"]
+ENTRYPOINT ["jira-connector-server"]
