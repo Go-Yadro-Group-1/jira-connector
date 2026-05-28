@@ -24,6 +24,7 @@ func New(cfg config.AppConfig, projectKey string) (*App, error) {
 	jiraClient := jira.New(cfg.Jira)
 
 	ctx := context.Background()
+
 	database, err := database.NewConnection(ctx, cfg.DB)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
@@ -54,7 +55,8 @@ func (a *App) Run() <-chan error {
 
 func (a *App) Close() error {
 	if a.db != nil {
-		if err := a.db.Close(); err != nil {
+		err := a.db.Close()
+		if err != nil {
 			return fmt.Errorf("close database: %w", err)
 		}
 	}

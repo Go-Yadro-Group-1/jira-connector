@@ -29,8 +29,9 @@ const (
 )
 
 var (
-	errInvalidPayloadType = errors.New("invalid payload type")
-	errInvalidRepository  = errors.New("repository is not *postgres.PostgresRepository")
+	errInvalidPayloadType   = errors.New("invalid payload type")
+	errInvalidRepository    = errors.New("repository is not *postgres.PostgresRepository")
+	errUnexpectedResultType = errors.New("unexpected result type")
 )
 
 type JiraClient interface {
@@ -112,7 +113,7 @@ type issueFetcher struct {
 	JiraClient JiraClient
 }
 
-func (f *issueFetcher) Process(ctx context.Context, task workerpool.Task) (interface{}, error) {
+func (f *issueFetcher) Process(ctx context.Context, task workerpool.Task) (any, error) {
 	payload, ok := task.Payload.(IssueTaskPayload)
 	if !ok {
 		return nil, fmt.Errorf("%w: %T", errInvalidPayloadType, task.Payload)
@@ -124,7 +125,9 @@ func (f *issueFetcher) Process(ctx context.Context, task workerpool.Task) (inter
 	}
 
 	var fields jira.IssueFields
-	if err := json.Unmarshal(issue.Fields, &fields); err != nil {
+
+	err = json.Unmarshal(issue.Fields, &fields)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal fields: %w", err)
 	}
 
@@ -141,6 +144,7 @@ func (f *issueFetcher) Process(ctx context.Context, task workerpool.Task) (inter
 
 func collectAuthors(issue *jira.Issue, fields *jira.IssueFields) []jira.Author {
 	seen := make(map[string]bool)
+
 	var authors []jira.Author
 
 	add := func(name, displayName string) {
@@ -180,9 +184,8 @@ func (s *Service) SyncProject(ctx context.Context, projectKey string) (string, e
 	err = pgRepo.WithTransaction(ctx, func(txRepo *postgres.PostgresRepository) error {
 		return s.syncProjectInTx(ctx, txRepo, projectKey, projectID)
 	})
-
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("sync transaction: %w", err)
 	}
 
 	return strconv.FormatInt(projectID, 10), nil
@@ -201,57 +204,68 @@ func (s *Service) syncProjectInTx(
 	pool := workerpool.New(s.workerCount, s.queueSize, fetcher)
 	resultCh := pool.Run(ctx)
 
-	g, ctx := errgroup.WithContext(ctx)
+	errGroup, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
+	errGroup.Go(func() error {
 		defer pool.Stop()
 
 		return s.submitAllTasks(ctx, projectKey, projectID, pool)
 	})
 
-	var firstErr error
-	g.Go(func() error {
-		for res := range resultCh {
-			if res.Err != nil {
-				cancel()
-
-				if firstErr == nil {
-					firstErr = fmt.Errorf("task %s failed: %w", res.TaskID, res.Err)
-				}
-
-				continue
-			}
-
-			pi, ok := res.Result.(processedIssue)
-			if !ok {
-				cancel()
-
-				if firstErr == nil {
-					firstErr = fmt.Errorf("unexpected result type: %T", res.Result)
-				}
-
-				continue
-			}
-
-			if err := s.insertProcessedIssue(ctx, txRepo, pi); err != nil {
-				cancel()
-
-				if firstErr == nil {
-					firstErr = err
-				}
-
-				continue
-			}
-
-			if count := s.processed.Add(1); count%progressLogInterval == 0 {
-				log.Printf("[sync] progress: %d issues processed", count)
-			}
-		}
-
-		return firstErr
+	errGroup.Go(func() error {
+		return s.drainResults(ctx, cancel, txRepo, resultCh)
 	})
 
-	return g.Wait()
+	return fmt.Errorf("sync project in tx: %w", errGroup.Wait())
+}
+
+func (s *Service) drainResults(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	txRepo *postgres.PostgresRepository,
+	resultCh <-chan workerpool.TaskResult,
+) error {
+	var firstErr error
+
+	for res := range resultCh {
+		if res.Err != nil {
+			cancel()
+
+			if firstErr == nil {
+				firstErr = fmt.Errorf("task %s failed: %w", res.TaskID, res.Err)
+			}
+
+			continue
+		}
+
+		item, ok := res.Result.(processedIssue)
+		if !ok {
+			cancel()
+
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%w: %T", errUnexpectedResultType, res.Result)
+			}
+
+			continue
+		}
+
+		insertErr := s.insertProcessedIssue(ctx, txRepo, item)
+		if insertErr != nil {
+			cancel()
+
+			if firstErr == nil {
+				firstErr = insertErr
+			}
+
+			continue
+		}
+
+		if count := s.processed.Add(1); count%progressLogInterval == 0 {
+			log.Printf("[sync] progress: %d issues processed", count)
+		}
+	}
+
+	return firstErr
 }
 
 func (s *Service) submitAllTasks(
@@ -267,7 +281,7 @@ func (s *Service) submitAllTasks(
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("submit tasks context cancelled: %w", ctx.Err())
 		default:
 		}
 
@@ -282,8 +296,9 @@ func (s *Service) submitAllTasks(
 				ProjectID: projectID,
 			})
 
-			if err := pool.Submit(ctx, task); err != nil {
-				return fmt.Errorf("submit %s: %w", iss.Key, err)
+			submitErr := pool.Submit(ctx, task)
+			if submitErr != nil {
+				return fmt.Errorf("submit %s: %w", iss.Key, submitErr)
 			}
 
 			submitted++
@@ -304,33 +319,36 @@ func (s *Service) submitAllTasks(
 func (s *Service) insertProcessedIssue(
 	ctx context.Context,
 	txRepo *postgres.PostgresRepository,
-	pi processedIssue,
+	item processedIssue,
 ) error {
-	for _, a := range pi.Authors {
+	for _, a := range item.Authors {
 		raw := mapper.MapAuthorToRaw(a)
-		if err := txRepo.InsertAuthor(ctx, raw); err != nil &&
-			!errors.Is(err, repository.ErrAuthorAlreadyExists) {
-			return fmt.Errorf("author %s: %w", a.Name, err)
+
+		authorErr := txRepo.InsertAuthor(ctx, raw)
+		if authorErr != nil && !errors.Is(authorErr, repository.ErrAuthorAlreadyExists) {
+			return fmt.Errorf("author %s: %w", a.Name, authorErr)
 		}
 	}
 
-	rawIssue, err := mapper.MapIssueToRaw(pi.JiraIssue, pi.ProjectID, &pi.Fields)
+	rawIssue, err := mapper.MapIssueToRaw(item.JiraIssue, item.ProjectID, &item.Fields)
 	if err != nil {
 		return fmt.Errorf("map issue: %w", err)
 	}
 
-	if err := txRepo.InsertIssue(ctx, rawIssue); err != nil {
-		if errors.Is(err, repository.ErrIssueAlreadyExists) {
+	issueErr := txRepo.InsertIssue(ctx, rawIssue)
+	if issueErr != nil {
+		if errors.Is(issueErr, repository.ErrIssueAlreadyExists) {
 			return nil
 		}
 
-		return fmt.Errorf("insert issue %s: %w", pi.JiraIssue.Key, err)
+		return fmt.Errorf("insert issue %s: %w", item.JiraIssue.Key, issueErr)
 	}
 
-	changes := mapper.MapChangelogToRaw(pi.JiraIssue, rawIssue.ID)
+	changes := mapper.MapChangelogToRaw(item.JiraIssue, rawIssue.ID)
 	for _, ch := range changes {
-		if err := txRepo.InsertStatusChange(ctx, ch); err != nil {
-			log.Printf("[sync] WARNING %s: insert status change: %v", pi.JiraIssue.Key, err)
+		changeErr := txRepo.InsertStatusChange(ctx, ch)
+		if changeErr != nil {
+			log.Printf("[sync] WARNING %s: insert status change: %v", item.JiraIssue.Key, changeErr)
 		}
 	}
 

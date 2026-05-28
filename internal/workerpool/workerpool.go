@@ -38,11 +38,11 @@ func (t Task) GetPayload() any {
 
 type TaskResult struct {
 	TaskID string
-	Result interface{}
+	Result any
 	Err    error
 }
 
-func NewTaskResult(taskID string, result interface{}, err error) TaskResult {
+func NewTaskResult(taskID string, result any, err error) TaskResult {
 	return TaskResult{
 		TaskID: taskID,
 		Result: result,
@@ -79,7 +79,7 @@ type PoolStats struct {
 }
 
 type TaskProcessor interface {
-	Process(ctx context.Context, task Task) (interface{}, error)
+	Process(ctx context.Context, task Task) (any, error)
 }
 
 func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
@@ -92,18 +92,17 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 }
 
 func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
-	g, ctx := errgroup.WithContext(ctx)
+	errGroup, ctx := errgroup.WithContext(ctx)
 
 	for i := range wp.workerCount {
-		g.Go(func() error {
-			wp.worker(ctx, i)
-
-			return nil
+		errGroup.Go(func() error {
+			return wp.worker(ctx, i)
 		})
 	}
 
 	go func() {
-		if err := g.Wait(); err != nil {
+		err := errGroup.Wait()
+		if err != nil {
 			log.Printf("[workerpool] Worker pool stopped due to error: %v", err)
 		}
 
@@ -119,6 +118,7 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	}
 
 	var panicked bool
+
 	defer func() {
 		if r := recover(); r != nil {
 			panicked = true
@@ -187,7 +187,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 					identifier,
 				)
 
-				return ctx.Err()
+				return fmt.Errorf("worker context cancelled: %w", ctx.Err())
 			}
 
 		case <-ctx.Done():
@@ -196,7 +196,7 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 				identifier,
 			)
 
-			return ctx.Err()
+			return fmt.Errorf("worker context cancelled: %w", ctx.Err())
 		}
 	}
 }

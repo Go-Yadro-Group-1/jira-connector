@@ -62,14 +62,17 @@ func Load(path string) (*AppConfig, error) {
 	}
 
 	var cfg AppConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+
+	err = yaml.Unmarshal(data, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	applyDefaults(&cfg)
 	overrideFromEnv(&cfg)
 
-	if err := validate(&cfg); err != nil {
+	err = validate(&cfg)
+	if err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
@@ -89,12 +92,15 @@ func applyJiraDefaults(cfg *JiraConfig) {
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = DefaultMaxResults
 	}
+
 	if cfg.MinRetryDelay <= 0 {
 		cfg.MinRetryDelay = DefaultMinRetry
 	}
+
 	if cfg.MaxRetryDelay <= 0 {
 		cfg.MaxRetryDelay = DefaultMaxRetry
 	}
+
 	if cfg.RateLimitPerSec <= 0 {
 		cfg.RateLimitPerSec = DefaultRateLimit
 	}
@@ -104,15 +110,19 @@ func applyDBDefaults(cfg *DBConfig) {
 	if cfg.Host == "" {
 		cfg.Host = DefaultDBHost
 	}
+
 	if cfg.Port == 0 {
 		cfg.Port = DefaultDBPort
 	}
+
 	if cfg.User == "" {
 		cfg.User = DefaultDBUser
 	}
+
 	if cfg.Password == "" {
 		cfg.Password = DefaultDBPassword
 	}
+
 	if cfg.DBName == "" {
 		cfg.DBName = DefaultDBName
 	}
@@ -122,24 +132,31 @@ func overrideFromEnv(cfg *AppConfig) {
 	if v := os.Getenv("JIRA_BASE_URL"); v != "" {
 		cfg.Jira.BaseURL = v
 	}
+
 	if v := os.Getenv("JIRA_TOKEN"); v != "" {
 		cfg.Jira.Token = v
 	}
+
 	if v := os.Getenv("DB_HOST"); v != "" {
 		cfg.DB.Host = v
 	}
+
 	if v := os.Getenv("DB_PORT"); v != "" {
 		cfg.DB.Port = parseInt(v, DefaultDBPort)
 	}
+
 	if v := os.Getenv("DB_USER"); v != "" {
 		cfg.DB.User = v
 	}
+
 	if v := os.Getenv("DB_PASSWORD"); v != "" {
 		cfg.DB.Password = v
 	}
+
 	if v := os.Getenv("DB_NAME"); v != "" {
 		cfg.DB.DBName = v
 	}
+
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		cfg.App.LogLevel = v
 	}
@@ -164,10 +181,12 @@ func envOr(key, fallback string) string {
 }
 
 func parseInt(s string, fallback int) int {
-	var n int
-	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+	var result int
+
+	_, err := fmt.Sscanf(s, "%d", &result)
+	if err != nil {
 		return fallback
 	}
 
-	return n
+	return result
 }

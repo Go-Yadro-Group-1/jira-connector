@@ -38,7 +38,8 @@ func (s *Server) Close() {
 	}
 
 	if s.db != nil {
-		if err := s.db.Close(); err != nil {
+		err := s.db.Close()
+		if err != nil {
 			s.log.Printf("Failed to close database: %v", err)
 		}
 	}

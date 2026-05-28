@@ -28,6 +28,7 @@ func run() int {
 	search := flag.String("search", "", "search query (for projects)")
 	limit := flag.Int("limit", defaultLimit, "limit per page (for projects)")
 	page := flag.Int("page", 0, "page number (for projects)")
+
 	flag.Parse()
 
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
