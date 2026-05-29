@@ -9,19 +9,21 @@ import (
 )
 
 const (
-	DefaultHost       = "0.0.0.0"
-	DefaultPort       = 50052
-	DefaultMaxResults = 50
-	DefaultMinRetry   = 1000
-	DefaultMaxRetry   = 60000
-	DefaultRateLimit  = 25.0
-	DefaultConfigPath = "config/dev.yaml"
-	DefaultLogLevel   = "info"
-	DefaultDBHost     = "localhost"
-	DefaultDBPort     = 5432
-	DefaultDBUser     = "postgres"
-	DefaultDBPassword = "password"
-	DefaultDBName     = "jira_connector"
+	DefaultHost        = "0.0.0.0"
+	DefaultPort        = 50052
+	DefaultMaxResults  = 50
+	DefaultMinRetry    = 1000
+	DefaultMaxRetry    = 60000
+	DefaultRateLimit   = 25.0
+	DefaultConfigPath  = "config/dev.yaml"
+	DefaultLogLevel    = "info"
+	DefaultDBHost      = "localhost"
+	DefaultDBPort      = 5432
+	DefaultDBUser      = "postgres"
+	DefaultDBPassword  = "password"
+	DefaultDBName      = "jira_connector"
+	DefaultPprofAddr   = ":6060"
+	DefaultPprofEnable = false
 )
 
 var ErrJiraBaseURLRequired = errors.New("jira.baseUrl is required")
@@ -43,10 +45,16 @@ type DBConfig struct {
 	DBName   string `yaml:"dbname"`
 }
 
+type PprofConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+}
+
 type AppConfig struct {
-	Jira JiraConfig `yaml:"jira"`
-	DB   DBConfig   `yaml:"db"`
-	App  struct {
+	Jira  JiraConfig  `yaml:"jira"`
+	DB    DBConfig    `yaml:"db"`
+	Pprof PprofConfig `yaml:"pprof"`
+	App   struct {
 		LogLevel string `yaml:"logLevel"`
 	} `yaml:"app"`
 }
@@ -82,9 +90,16 @@ func Load(path string) (*AppConfig, error) {
 func applyDefaults(cfg *AppConfig) {
 	applyJiraDefaults(&cfg.Jira)
 	applyDBDefaults(&cfg.DB)
+	applyPprofDefaults(&cfg.Pprof)
 
 	if cfg.App.LogLevel == "" {
 		cfg.App.LogLevel = DefaultLogLevel
+	}
+}
+
+func applyPprofDefaults(cfg *PprofConfig) {
+	if cfg.Addr == "" {
+		cfg.Addr = DefaultPprofAddr
 	}
 }
 
