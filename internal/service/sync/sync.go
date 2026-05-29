@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"sync/atomic"
 
@@ -59,6 +59,7 @@ type IssueTaskPayload struct {
 type Service struct {
 	jiraClient  JiraClient
 	repo        repository.Repository
+	logger      *slog.Logger
 	workerCount int
 	queueSize   int
 	processed   atomic.Uint64
@@ -73,10 +74,17 @@ func WithWorkerPool(workerCount, queueSize int) ServiceOption {
 	}
 }
 
+func WithLogger(logger *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		s.logger = logger
+	}
+}
+
 func NewService(jiraClient JiraClient, repo repository.Repository, opts ...ServiceOption) *Service {
 	svc := &Service{
 		jiraClient:  jiraClient,
 		repo:        repo,
+		logger:      slog.Default(),
 		workerCount: defaultWorkerCount,
 		queueSize:   defaultQueueSize,
 	}
@@ -167,7 +175,7 @@ func collectAuthors(issue *jira.Issue, fields *jira.IssueFields) []jira.Author {
 }
 
 func (s *Service) SyncProject(ctx context.Context, projectKey string) (string, error) {
-	log.Printf("Starting sync for project %q", projectKey)
+	s.logger.InfoContext(ctx, "starting sync", slog.String("project_key", projectKey))
 
 	projectID, err := s.ensureProject(ctx, projectKey)
 	if err != nil {
@@ -201,7 +209,7 @@ func (s *Service) syncProjectInTx(
 	defer cancel()
 
 	fetcher := &issueFetcher{JiraClient: s.jiraClient}
-	pool := workerpool.New(s.workerCount, s.queueSize, fetcher)
+	pool := workerpool.New(s.workerCount, s.queueSize, fetcher).WithLogger(s.logger)
 	resultCh := pool.Run(ctx)
 
 	errGroup, ctx := errgroup.WithContext(ctx)
@@ -216,7 +224,12 @@ func (s *Service) syncProjectInTx(
 		return s.drainResults(ctx, cancel, txRepo, resultCh)
 	})
 
-	return fmt.Errorf("sync project in tx: %w", errGroup.Wait())
+	err := errGroup.Wait()
+	if err != nil {
+		return fmt.Errorf("sync project in tx: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) drainResults(
@@ -261,7 +274,7 @@ func (s *Service) drainResults(
 		}
 
 		if count := s.processed.Add(1); count%progressLogInterval == 0 {
-			log.Printf("[sync] progress: %d issues processed", count)
+			s.logger.InfoContext(ctx, "sync progress", slog.Uint64("issues_processed", count))
 		}
 	}
 
@@ -311,7 +324,12 @@ func (s *Service) submitAllTasks(
 		startAt += len(resp.Issues)
 	}
 
-	log.Printf("[sync] submitted %d tasks for project %q", submitted, projectKey)
+	s.logger.InfoContext(
+		ctx,
+		"all tasks submitted",
+		slog.Int("submitted", submitted),
+		slog.String("project_key", projectKey),
+	)
 
 	return nil
 }
@@ -348,7 +366,12 @@ func (s *Service) insertProcessedIssue(
 	for _, ch := range changes {
 		changeErr := txRepo.InsertStatusChange(ctx, ch)
 		if changeErr != nil {
-			log.Printf("[sync] WARNING %s: insert status change: %v", item.JiraIssue.Key, changeErr)
+			s.logger.WarnContext(
+				ctx,
+				"insert status change failed",
+				slog.String("issue_key", item.JiraIssue.Key),
+				slog.Any("error", changeErr),
+			)
 		}
 	}
 

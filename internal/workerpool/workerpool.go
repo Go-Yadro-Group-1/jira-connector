@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
-
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -68,6 +66,7 @@ type WorkerPool struct {
 	resultCh    chan TaskResult
 	processor   TaskProcessor
 	stats       PoolStats
+	logger      *slog.Logger
 
 	once    sync.Once
 	stopped atomic.Bool
@@ -88,60 +87,76 @@ func New(workerCount int, queueSize int, processor TaskProcessor) *WorkerPool {
 		taskCh:      make(chan Task, queueSize),
 		resultCh:    make(chan TaskResult, queueSize),
 		processor:   processor,
+		logger:      slog.Default(),
 	}
 }
 
-func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
-	errGroup, ctx := errgroup.WithContext(ctx)
+func (wp *WorkerPool) WithLogger(logger *slog.Logger) *WorkerPool {
+	wp.logger = logger
 
-	for i := range wp.workerCount {
-		errGroup.Go(func() error {
-			return wp.worker(ctx, i)
-		})
+	return wp
+}
+
+// Run starts all workers and returns a channel of results.
+//
+// The returned channel is closed exactly once — after all workers have finished
+// their current tasks and exited. Callers must drain the channel to completion.
+//
+// taskCh must be closed by the producer (the caller of Submit) to signal that
+// no more tasks will be submitted. Run does not close taskCh.
+func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
+	var workerWG sync.WaitGroup
+
+	for workerID := range wp.workerCount {
+		workerWG.Add(1)
+
+		go func(id int) {
+			defer workerWG.Done()
+
+			wp.worker(ctx, id)
+		}(workerID)
 	}
 
+	// Close resultCh only after every worker has exited to prevent
+	// "send on closed channel" panics.
 	go func() {
-		err := errGroup.Wait()
-		if err != nil {
-			log.Printf("[workerpool] Worker pool stopped due to error: %v", err)
-		}
-
-		wp.Stop()
+		workerWG.Wait()
+		close(wp.resultCh)
 	}()
 
 	return wp.resultCh
 }
 
-func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
+// Submit enqueues a task. Returns errPoolStopped if Stop has been called.
+// If the context is cancelled before the task can be enqueued, returns a
+// wrapped context error.
+func (wp *WorkerPool) Submit(ctx context.Context, task Task) (retErr error) {
 	if wp.stopped.Load() {
 		return errPoolStopped
 	}
 
-	var panicked bool
-
 	defer func() {
 		if r := recover(); r != nil {
-			panicked = true
+			retErr = errSubmitPanic
 		}
 	}()
 
 	select {
 	case wp.taskCh <- task:
-		if panicked {
-			return errSubmitPanic
-		}
-
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("submit task: %w", ctx.Err())
 	}
 }
 
+// Stop signals that no more tasks will be submitted and closes taskCh.
+// It is idempotent; subsequent calls are no-ops.
+// Stop does NOT close resultCh — that happens automatically in Run once all
+// workers have drained taskCh and exited.
 func (wp *WorkerPool) Stop() {
 	wp.once.Do(func() {
 		wp.stopped.Store(true)
 		close(wp.taskCh)
-		close(wp.resultCh)
 	})
 }
 
@@ -149,19 +164,20 @@ func (wp *WorkerPool) Stats() *PoolStats {
 	return &wp.stats
 }
 
-func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
-	log.Printf("[workerpool] Worker %d started", identifier)
+func (wp *WorkerPool) worker(ctx context.Context, identifier int) {
+	wp.logger.InfoContext(ctx, "worker started", slog.Int("worker_id", identifier))
 
 	for {
 		select {
 		case task, ok := <-wp.taskCh:
 			if !ok {
-				log.Printf(
-					"[workerpool] Worker %d stopping: task channel closed",
-					identifier,
+				wp.logger.InfoContext(
+					ctx,
+					"worker stopping: task channel closed",
+					slog.Int("worker_id", identifier),
 				)
 
-				return nil
+				return
 			}
 
 			res, err := wp.processor.Process(ctx, task)
@@ -169,11 +185,12 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 
 			if err != nil {
 				wp.stats.Failed.Add(1)
-				log.Printf(
-					"[workerpool] Worker %d: task %s failed: %v",
-					identifier,
-					task.ID,
-					err,
+				wp.logger.ErrorContext(
+					ctx,
+					"worker task failed",
+					slog.Int("worker_id", identifier),
+					slog.String("task_id", task.ID),
+					slog.Any("error", err),
 				)
 			} else {
 				wp.stats.Processed.Add(1)
@@ -182,21 +199,23 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 			select {
 			case wp.resultCh <- result:
 			case <-ctx.Done():
-				log.Printf(
-					"[workerpool] Worker %d: context done while sending result",
-					identifier,
+				wp.logger.InfoContext(
+					ctx,
+					"worker stopping: context done while sending result",
+					slog.Int("worker_id", identifier),
 				)
 
-				return fmt.Errorf("worker context cancelled: %w", ctx.Err())
+				return
 			}
 
 		case <-ctx.Done():
-			log.Printf(
-				"[workerpool] Worker %d stopping: context done",
-				identifier,
+			wp.logger.InfoContext(
+				ctx,
+				"worker stopping: context done",
+				slog.Int("worker_id", identifier),
 			)
 
-			return fmt.Errorf("worker context cancelled: %w", ctx.Err())
+			return
 		}
 	}
 }
