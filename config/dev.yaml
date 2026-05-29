@@ -15,3 +15,7 @@ db:
 
 app:
   logLevel: "info"
+
+pprof:
+  enabled: true
+  addr: ":6060"

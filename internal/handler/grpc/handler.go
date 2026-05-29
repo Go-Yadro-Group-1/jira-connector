@@ -5,9 +5,12 @@ package grpchandler
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	connectorv1 "github.com/Go-Yadro-Group-1/Jira-Connector/gen/proto/connector/v1"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -24,13 +27,42 @@ type Service interface {
 type Handler struct {
 	connectorv1.UnimplementedConnectorServiceServer
 
-	svc Service
+	svc    Service
+	logger *slog.Logger
 }
 
-func New(svc Service) *Handler {
+func New(svc Service, logger *slog.Logger) *Handler {
 	return &Handler{
 		UnimplementedConnectorServiceServer: connectorv1.UnimplementedConnectorServiceServer{},
 		svc:                                 svc,
+		logger:                              logger,
+	}
+}
+
+// LoggingInterceptor logs method, duration, and gRPC status for every unary call.
+func LoggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		start := time.Now()
+
+		resp, err := handler(ctx, req)
+
+		code := codes.OK
+		if err != nil {
+			code = status.Code(err)
+		}
+
+		logger.InfoContext(ctx, "grpc request",
+			slog.String("method", info.FullMethod),
+			slog.Duration("duration", time.Since(start)),
+			slog.String("code", code.String()),
+		)
+
+		return resp, err
 	}
 }
 
