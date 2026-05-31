@@ -121,7 +121,8 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 
 	jiraClient := jira.New(cfg.Jira)
 	repo := postgres.New(database)
-	svc := sync.NewService(jiraClient, repo)
+	manager := sync.NewManager()
+	svc := sync.NewService(jiraClient, repo, manager)
 	handler := grpchandler.New(svc)
 
 	grpcServer := grpc.NewServer()

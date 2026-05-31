@@ -4,9 +4,30 @@ package connector.v1;
 
 option go_package = "gen/proto/connector/v1;connectorv1";
 
+enum SyncState {
+  SYNC_STATE_UNSPECIFIED = 0;
+  SYNC_STATE_RUNNING = 1;
+  SYNC_STATE_COMPLETED = 2;
+  SYNC_STATE_FAILED = 3;
+}
+
 service ConnectorService {
   rpc GetAvailableProjects(GetAvailableProjectsRequest) returns (GetAvailableProjectsResponse);
   rpc DownloadProject(DownloadProjectRequest) returns (DownloadProjectResponse);
+  rpc GetSyncStatus(GetSyncStatusRequest) returns (GetSyncStatusResponse);
+}
+
+message GetSyncStatusRequest {
+  string sync_id = 1;
+}
+
+message GetSyncStatusResponse {
+  string sync_id = 1;
+  SyncState state = 2;
+  uint32 processed = 3;
+  uint32 total = 4;
+  string error = 5;
+  string project_key = 6;
 }
 
 message GetAvailableProjectsRequest {
