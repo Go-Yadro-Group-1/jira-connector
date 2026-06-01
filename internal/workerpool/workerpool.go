@@ -106,7 +106,11 @@ func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 			log.Printf("[workerpool] Worker pool stopped due to error: %v", err)
 		}
 
-		wp.Stop()
+		// Close resultCh only after every worker has returned, so no worker can
+		// send on a closed channel. Stop() (called by the producer) only closes
+		// the input channel; ownership of closing the output stays here.
+		wp.stopped.Store(true)
+		close(wp.resultCh)
 	}()
 
 	return wp.resultCh
@@ -137,11 +141,14 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) error {
 	}
 }
 
+// Stop signals that no more tasks will be submitted by closing the input
+// channel. It does NOT close the result channel — that is owned by Run's
+// watcher goroutine and closed only after all workers have returned, which
+// prevents a "send on closed channel" panic on in-flight results.
 func (wp *WorkerPool) Stop() {
 	wp.once.Do(func() {
 		wp.stopped.Store(true)
 		close(wp.taskCh)
-		close(wp.resultCh)
 	})
 }
 
