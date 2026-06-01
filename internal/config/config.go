@@ -9,19 +9,21 @@ import (
 )
 
 const (
-	DefaultHost       = "0.0.0.0"
-	DefaultPort       = 50052
-	DefaultMaxResults = 50
-	DefaultMinRetry   = 1000
-	DefaultMaxRetry   = 60000
-	DefaultRateLimit  = 25.0
-	DefaultConfigPath = "config/dev.yaml"
-	DefaultLogLevel   = "info"
-	DefaultDBHost     = "localhost"
-	DefaultDBPort     = 5432
-	DefaultDBUser     = "postgres"
-	DefaultDBPassword = "password"
-	DefaultDBName     = "jira_connector"
+	DefaultHost        = "0.0.0.0"
+	DefaultPort        = 50052
+	DefaultMaxResults  = 50
+	DefaultMinRetry    = 1000
+	DefaultMaxRetry    = 60000
+	DefaultRateLimit   = 25.0
+	DefaultConfigPath  = "config/dev.yaml"
+	DefaultLogLevel    = "info"
+	DefaultDBHost      = "localhost"
+	DefaultDBPort      = 5432
+	DefaultDBUser      = "postgres"
+	DefaultDBPassword  = "password"
+	DefaultDBName      = "jira_connector"
+	DefaultMetricsAddr = ":9090"
+	DefaultPprofAddr   = ":6060"
 )
 
 var ErrJiraBaseURLRequired = errors.New("jira.baseUrl is required")
@@ -43,10 +45,25 @@ type DBConfig struct {
 	DBName   string `yaml:"dbname"`
 }
 
+// ObsEndpoint configures a single diagnostic HTTP endpoint (metrics or pprof).
+// Enabled is a pointer so an absent block defaults to on, while an explicit
+// `enabled: false` can turn it off.
+type ObsEndpoint struct {
+	Enabled *bool  `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+}
+
+// IsEnabled reports whether the endpoint should be started.
+func (e ObsEndpoint) IsEnabled() bool {
+	return e.Enabled == nil || *e.Enabled
+}
+
 type AppConfig struct {
-	Jira JiraConfig `yaml:"jira"`
-	DB   DBConfig   `yaml:"db"`
-	App  struct {
+	Jira    JiraConfig  `yaml:"jira"`
+	DB      DBConfig    `yaml:"db"`
+	Metrics ObsEndpoint `yaml:"metrics"`
+	Pprof   ObsEndpoint `yaml:"pprof"`
+	App     struct {
 		LogLevel string `yaml:"logLevel"`
 	} `yaml:"app"`
 }
@@ -56,16 +73,21 @@ func Load(path string) (*AppConfig, error) {
 		path = envOr("CONNECTOR_CONFIG", DefaultConfigPath)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config %q: %w", path, err)
-	}
-
 	var cfg AppConfig
 
-	err = yaml.Unmarshal(data, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal config: %w", err)
+	// A missing config file is not fatal: the whole config can be supplied via
+	// the environment (.env). This lets the service run env-only on deploy
+	// targets that do not ship a YAML (e.g. Timeweb App Platform). Only a real
+	// read/parse error is surfaced.
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		err = yaml.Unmarshal(data, &cfg)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal config: %w", err)
+		}
+	case !os.IsNotExist(err):
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
 	applyDefaults(&cfg)
@@ -82,6 +104,14 @@ func Load(path string) (*AppConfig, error) {
 func applyDefaults(cfg *AppConfig) {
 	applyJiraDefaults(&cfg.Jira)
 	applyDBDefaults(&cfg.DB)
+
+	if cfg.Metrics.Addr == "" {
+		cfg.Metrics.Addr = DefaultMetricsAddr
+	}
+
+	if cfg.Pprof.Addr == "" {
+		cfg.Pprof.Addr = DefaultPprofAddr
+	}
 
 	if cfg.App.LogLevel == "" {
 		cfg.App.LogLevel = DefaultLogLevel
@@ -159,6 +189,18 @@ func overrideFromEnv(cfg *AppConfig) {
 
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		cfg.App.LogLevel = v
+	}
+
+	overrideObsFromEnv(cfg)
+}
+
+func overrideObsFromEnv(cfg *AppConfig) {
+	if v := os.Getenv("METRICS_ADDR"); v != "" {
+		cfg.Metrics.Addr = v
+	}
+
+	if v := os.Getenv("PPROF_ADDR"); v != "" {
+		cfg.Pprof.Addr = v
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/mapper"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/workerpool"
@@ -21,8 +22,8 @@ import (
 )
 
 const (
-	defaultWorkerCount   = 25
-	defaultQueueSize     = 100
+	defaultWorkerCount   = 300
+	defaultQueueSize     = 300
 	defaultProjectsLimit = 100
 	defaultPageSize      = 50
 	progressLogInterval  = 50
@@ -78,6 +79,7 @@ type Service struct {
 	manager     *Manager
 	workerCount int
 	queueSize   int
+	metrics     *metrics.Metrics
 }
 
 // ServiceOption configures a Service.
@@ -88,6 +90,14 @@ func WithWorkerPool(workerCount, queueSize int) ServiceOption {
 	return func(s *Service) {
 		s.workerCount = workerCount
 		s.queueSize = queueSize
+	}
+}
+
+// WithMetrics wires Prometheus instrumentation into the service. The zero value
+// (nil) leaves sync operations uninstrumented.
+func WithMetrics(m *metrics.Metrics) ServiceOption {
+	return func(s *Service) {
+		s.metrics = m
 	}
 }
 
@@ -104,6 +114,7 @@ func NewService(
 		manager:     manager,
 		workerCount: defaultWorkerCount,
 		queueSize:   defaultQueueSize,
+		metrics:     nil,
 	}
 
 	for _, opt := range opts {
@@ -227,6 +238,8 @@ func (s *Service) SyncProject(ctx context.Context, projectKey string) (Result, e
 
 	syncID := res.SyncID
 
+	s.metrics.SyncJobStarted()
+
 	// Detach from the request context so client disconnect cannot cancel the job.
 	detachedCtx := context.WithoutCancel(ctx)
 
@@ -240,12 +253,14 @@ func (s *Service) SyncProject(ctx context.Context, projectKey string) (Result, e
 		if syncErr != nil {
 			log.Printf("[sync] sync id=%s project=%q failed: %v", syncID, projectKey, syncErr)
 			s.manager.Fail(syncID, syncErr.Error())
+			s.metrics.SyncJobFinished(true)
 
 			return
 		}
 
 		log.Printf("[sync] sync id=%s project=%q completed", syncID, projectKey)
 		s.manager.Complete(syncID)
+		s.metrics.SyncJobFinished(false)
 	}()
 
 	return Result{
@@ -403,6 +418,7 @@ func (s *Service) commitPage(
 			}
 
 			s.manager.IncrProcessed(syncID)
+			s.metrics.IncIssuesProcessed()
 		}
 
 		return nil

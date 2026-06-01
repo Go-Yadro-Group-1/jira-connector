@@ -9,11 +9,15 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/joho/godotenv"
+
 	connectorv1 "github.com/Go-Yadro-Group-1/Jira-Connector/gen/proto/connector/v1"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/database"
 	grpchandler "github.com/Go-Yadro-Group-1/Jira-Connector/internal/handler/grpc"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/observability"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/service/sync"
 	"github.com/spf13/cobra"
@@ -29,12 +33,17 @@ type Server struct {
 	grpcServer *grpc.Server
 	lis        net.Listener
 	db         *sql.DB
+	obs        *observability.Server
 	log        *log.Logger
 }
 
 func (s *Server) Close() {
 	if s.grpcServer != nil {
 		s.grpcServer.GracefulStop()
+	}
+
+	if s.obs != nil {
+		s.obs.Shutdown()
 	}
 
 	if s.db != nil {
@@ -63,6 +72,11 @@ func NewCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, _ []string) error {
+	// Best-effort: load a local .env if present. godotenv does not override
+	// variables already set in the environment, so platform-injected env
+	// (e.g. Timeweb) keeps precedence; a missing file is not an error.
+	_ = godotenv.Load()
+
 	cfg, err := loadConfig(cmd)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -88,6 +102,50 @@ func loadConfig(cmd *cobra.Command) (*config.AppConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+// buildServer wires metrics, the gRPC server, and the diagnostic endpoints into
+// a ready-to-serve Server.
+func buildServer(cfg *config.AppConfig, lis net.Listener, dbConn *sql.DB) *Server {
+	mtr := metrics.New()
+	mtr.RegisterRuntimeCollectors()
+
+	jiraClient := jira.New(cfg.Jira)
+	jiraClient.SetMetrics(mtr)
+
+	repo := postgres.New(dbConn)
+	manager := sync.NewManager()
+	svc := sync.NewService(jiraClient, repo, manager, sync.WithMetrics(mtr))
+	handler := grpchandler.New(svc)
+
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(mtr.GRPCServer.UnaryServerInterceptor()),
+	)
+	connectorv1.RegisterConnectorServiceServer(grpcServer, handler)
+	mtr.GRPCServer.InitializeMetrics(grpcServer)
+
+	return &Server{
+		grpcServer: grpcServer,
+		lis:        lis,
+		db:         dbConn,
+		obs:        startObservability(cfg, mtr),
+		log:        log.Default(),
+	}
+}
+
+// startObservability launches the metrics and pprof endpoints enabled in cfg.
+func startObservability(cfg *config.AppConfig, mtr *metrics.Metrics) *observability.Server {
+	metricsAddr := ""
+	if cfg.Metrics.IsEnabled() {
+		metricsAddr = cfg.Metrics.Addr
+	}
+
+	pprofAddr := ""
+	if cfg.Pprof.IsEnabled() {
+		pprofAddr = cfg.Pprof.Addr
+	}
+
+	return observability.New(log.Default(), mtr, metricsAddr, pprofAddr)
 }
 
 func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
@@ -119,21 +177,8 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig) error {
 		return fmt.Errorf("init database: %w", err)
 	}
 
-	jiraClient := jira.New(cfg.Jira)
-	repo := postgres.New(database)
-	manager := sync.NewManager()
-	svc := sync.NewService(jiraClient, repo, manager)
-	handler := grpchandler.New(svc)
-
-	grpcServer := grpc.NewServer()
-	connectorv1.RegisterConnectorServiceServer(grpcServer, handler)
-
-	srv := &Server{
-		grpcServer: grpcServer,
-		lis:        lis,
-		db:         database,
-		log:        log.Default(),
-	}
+	srv := buildServer(cfg, lis, database)
+	grpcServer := srv.grpcServer
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
