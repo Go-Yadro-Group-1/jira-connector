@@ -445,11 +445,14 @@ func (s *Service) insertProcessedIssue(
 
 	issueErr := txRepo.InsertIssue(ctx, rawIssue)
 	if issueErr != nil {
-		if errors.Is(issueErr, repository.ErrIssueAlreadyExists) {
-			return nil
-		}
-
 		return fmt.Errorf("insert issue %s: %w", item.JiraIssue.Key, issueErr)
+	}
+
+	// The issue is upserted, so on a re-sync replace its status changes wholesale
+	// (the table has no natural key) instead of appending duplicates.
+	delErr := txRepo.DeleteStatusChangesByIssue(ctx, rawIssue.ID)
+	if delErr != nil {
+		return fmt.Errorf("reset status changes %s: %w", item.JiraIssue.Key, delErr)
 	}
 
 	changes := mapper.MapChangelogToRaw(item.JiraIssue, rawIssue.ID)
