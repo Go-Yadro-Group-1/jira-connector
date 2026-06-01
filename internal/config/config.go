@@ -64,16 +64,21 @@ func Load(path string) (*AppConfig, error) {
 		path = envOr("CONNECTOR_CONFIG", DefaultConfigPath)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config %q: %w", path, err)
-	}
-
 	var cfg AppConfig
 
-	err = yaml.Unmarshal(data, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal config: %w", err)
+	// A missing config file is not fatal: the whole config can be supplied via
+	// the environment (.env). This lets the service run env-only on deploy
+	// targets that do not ship a YAML (e.g. Timeweb App Platform). Only a real
+	// read/parse error is surfaced.
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		err = yaml.Unmarshal(data, &cfg)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal config: %w", err)
+		}
+	case !os.IsNotExist(err):
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
 	applyDefaults(&cfg)
