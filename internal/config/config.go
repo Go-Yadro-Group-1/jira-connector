@@ -22,8 +22,8 @@ const (
 	DefaultDBUser      = "postgres"
 	DefaultDBPassword  = "password"
 	DefaultDBName      = "jira_connector"
+	DefaultMetricsAddr = ":9090"
 	DefaultPprofAddr   = ":6060"
-	DefaultPprofEnable = false
 )
 
 var ErrJiraBaseURLRequired = errors.New("jira.baseUrl is required")
@@ -45,16 +45,25 @@ type DBConfig struct {
 	DBName   string `yaml:"dbname"`
 }
 
-type PprofConfig struct {
-	Enabled bool   `yaml:"enabled"`
+// ObsEndpoint configures a single diagnostic HTTP endpoint (metrics or pprof).
+// Enabled is a pointer so an absent block defaults to on, while an explicit
+// `enabled: false` can turn it off.
+type ObsEndpoint struct {
+	Enabled *bool  `yaml:"enabled"`
 	Addr    string `yaml:"addr"`
 }
 
+// IsEnabled reports whether the endpoint should be started.
+func (e ObsEndpoint) IsEnabled() bool {
+	return e.Enabled == nil || *e.Enabled
+}
+
 type AppConfig struct {
-	Jira  JiraConfig  `yaml:"jira"`
-	DB    DBConfig    `yaml:"db"`
-	Pprof PprofConfig `yaml:"pprof"`
-	App   struct {
+	Jira    JiraConfig  `yaml:"jira"`
+	DB      DBConfig    `yaml:"db"`
+	Metrics ObsEndpoint `yaml:"metrics"`
+	Pprof   ObsEndpoint `yaml:"pprof"`
+	App     struct {
 		LogLevel string `yaml:"logLevel"`
 	} `yaml:"app"`
 }
@@ -95,16 +104,17 @@ func Load(path string) (*AppConfig, error) {
 func applyDefaults(cfg *AppConfig) {
 	applyJiraDefaults(&cfg.Jira)
 	applyDBDefaults(&cfg.DB)
-	applyPprofDefaults(&cfg.Pprof)
+
+	if cfg.Metrics.Addr == "" {
+		cfg.Metrics.Addr = DefaultMetricsAddr
+	}
+
+	if cfg.Pprof.Addr == "" {
+		cfg.Pprof.Addr = DefaultPprofAddr
+	}
 
 	if cfg.App.LogLevel == "" {
 		cfg.App.LogLevel = DefaultLogLevel
-	}
-}
-
-func applyPprofDefaults(cfg *PprofConfig) {
-	if cfg.Addr == "" {
-		cfg.Addr = DefaultPprofAddr
 	}
 }
 
@@ -179,6 +189,18 @@ func overrideFromEnv(cfg *AppConfig) {
 
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		cfg.App.LogLevel = v
+	}
+
+	overrideObsFromEnv(cfg)
+}
+
+func overrideObsFromEnv(cfg *AppConfig) {
+	if v := os.Getenv("METRICS_ADDR"); v != "" {
+		cfg.Metrics.Addr = v
+	}
+
+	if v := os.Getenv("PPROF_ADDR"); v != "" {
+		cfg.Pprof.Addr = v
 	}
 }
 

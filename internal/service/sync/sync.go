@@ -8,12 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
+	"log"
 	"strconv"
-	"sync/atomic"
+	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/mapper"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/workerpool"
@@ -21,19 +22,33 @@ import (
 )
 
 const (
-	defaultWorkerCount   = 25
-	defaultQueueSize     = 100
+	defaultWorkerCount   = 300
+	defaultQueueSize     = 300
 	defaultProjectsLimit = 100
 	defaultPageSize      = 50
 	progressLogInterval  = 50
+	// syncTimeout is the maximum wall-clock time allowed for a single project sync.
+	// The goroutine runs on a detached context so this is the only deadline.
+	syncTimeout = 4 * time.Hour
 )
 
 var (
 	errInvalidPayloadType   = errors.New("invalid payload type")
 	errInvalidRepository    = errors.New("repository is not *postgres.PostgresRepository")
 	errUnexpectedResultType = errors.New("unexpected result type")
+
+	// ErrProjectNotFound is returned when the project key does not exist in Jira.
+	ErrProjectNotFound = errors.New("project not found in Jira")
 )
 
+// Result holds the immediate response from SyncProject.
+type Result struct {
+	SyncID    string
+	ProjectID string
+	Status    string // "running" or "already_running"
+}
+
+// JiraClient is the interface for interacting with the Jira API.
 type JiraClient interface {
 	GetProjects(
 		ctx context.Context,
@@ -51,22 +66,26 @@ type JiraClient interface {
 	) (*jira.Issue, error)
 }
 
+// IssueTaskPayload carries the data needed to fetch a single issue.
 type IssueTaskPayload struct {
 	IssueKey  string
 	ProjectID int64
 }
 
+// Service orchestrates Jira data sync operations.
 type Service struct {
 	jiraClient  JiraClient
 	repo        repository.Repository
-	logger      *slog.Logger
+	manager     *Manager
 	workerCount int
 	queueSize   int
-	processed   atomic.Uint64
+	metrics     *metrics.Metrics
 }
 
+// ServiceOption configures a Service.
 type ServiceOption func(*Service)
 
+// WithWorkerPool overrides the default worker pool sizing.
 func WithWorkerPool(workerCount, queueSize int) ServiceOption {
 	return func(s *Service) {
 		s.workerCount = workerCount
@@ -74,19 +93,28 @@ func WithWorkerPool(workerCount, queueSize int) ServiceOption {
 	}
 }
 
-func WithLogger(logger *slog.Logger) ServiceOption {
+// WithMetrics wires Prometheus instrumentation into the service. The zero value
+// (nil) leaves sync operations uninstrumented.
+func WithMetrics(m *metrics.Metrics) ServiceOption {
 	return func(s *Service) {
-		s.logger = logger
+		s.metrics = m
 	}
 }
 
-func NewService(jiraClient JiraClient, repo repository.Repository, opts ...ServiceOption) *Service {
+// NewService creates a configured Service.
+func NewService(
+	jiraClient JiraClient,
+	repo repository.Repository,
+	manager *Manager,
+	opts ...ServiceOption,
+) *Service {
 	svc := &Service{
 		jiraClient:  jiraClient,
 		repo:        repo,
-		logger:      slog.Default(),
+		manager:     manager,
 		workerCount: defaultWorkerCount,
 		queueSize:   defaultQueueSize,
+		metrics:     nil,
 	}
 
 	for _, opt := range opts {
@@ -96,6 +124,7 @@ func NewService(jiraClient JiraClient, repo repository.Repository, opts ...Servi
 	return svc
 }
 
+// GetAvailableProjects proxies the Jira project listing.
 func (s *Service) GetAvailableProjects(
 	ctx context.Context,
 	searchQuery string,
@@ -107,6 +136,11 @@ func (s *Service) GetAvailableProjects(
 	}
 
 	return resp, nil
+}
+
+// Manager returns the job registry so the handler can forward status queries.
+func (s *Service) Manager() *Manager {
+	return s.manager
 }
 
 type processedIssue struct {
@@ -174,147 +208,105 @@ func collectAuthors(issue *jira.Issue, fields *jira.IssueFields) []jira.Author {
 	return authors
 }
 
-func (s *Service) SyncProject(ctx context.Context, projectKey string) (string, error) {
-	s.logger.InfoContext(ctx, "starting sync", slog.String("project_key", projectKey))
-
-	projectID, err := s.ensureProject(ctx, projectKey)
-	if err != nil {
-		return "", fmt.Errorf("ensure project: %w", err)
-	}
+// SyncProject validates the project key and starts an async sync if not already running.
+// It returns immediately with a Result; the caller should poll GetSyncStatus for completion.
+func (s *Service) SyncProject(ctx context.Context, projectKey string) (Result, error) {
+	log.Printf("[sync] requested sync for project %q", projectKey)
 
 	pgRepo, ok := s.repo.(*postgres.PostgresRepository)
 	if !ok {
-		return "", errInvalidRepository
+		return Result{}, errInvalidRepository
 	}
 
-	s.processed.Store(0)
-
-	err = pgRepo.WithTransaction(ctx, func(txRepo *postgres.PostgresRepository) error {
-		return s.syncProjectInTx(ctx, txRepo, projectKey, projectID)
-	})
+	// Validate that the project key exists in Jira before registering the job.
+	projectID, err := s.ensureProject(ctx, projectKey)
 	if err != nil {
-		return "", fmt.Errorf("sync transaction: %w", err)
+		return Result{}, fmt.Errorf("ensure project: %w", err)
 	}
 
-	return strconv.FormatInt(projectID, 10), nil
+	res := s.manager.Start(projectKey)
+
+	if !res.Started {
+		log.Printf("[sync] project %q sync already running (id=%s)", projectKey, res.SyncID)
+
+		return Result{
+			SyncID:    res.SyncID,
+			ProjectID: strconv.FormatInt(projectID, 10),
+			Status:    "already_running",
+		}, nil
+	}
+
+	syncID := res.SyncID
+
+	s.metrics.SyncJobStarted()
+
+	// Detach from the request context so client disconnect cannot cancel the job.
+	detachedCtx := context.WithoutCancel(ctx)
+
+	go func() {
+		syncCtx, cancel := context.WithTimeout(detachedCtx, syncTimeout)
+		defer cancel()
+
+		log.Printf("[sync] starting background sync id=%s project=%q", syncID, projectKey)
+
+		syncErr := s.runSync(syncCtx, pgRepo, syncID, projectKey, projectID)
+		if syncErr != nil {
+			log.Printf("[sync] sync id=%s project=%q failed: %v", syncID, projectKey, syncErr)
+			s.manager.Fail(syncID, syncErr.Error())
+			s.metrics.SyncJobFinished(true)
+
+			return
+		}
+
+		log.Printf("[sync] sync id=%s project=%q completed", syncID, projectKey)
+		s.manager.Complete(syncID)
+		s.metrics.SyncJobFinished(false)
+	}()
+
+	return Result{
+		SyncID:    syncID,
+		ProjectID: strconv.FormatInt(projectID, 10),
+		Status:    "running",
+	}, nil
 }
 
-func (s *Service) syncProjectInTx(
+// runSync fetches all issues for a project page by page, each page committed in
+// its own transaction. This avoids a single long-running transaction and allows
+// incremental progress even if the job fails partway through.
+func (s *Service) runSync(
 	ctx context.Context,
-	txRepo *postgres.PostgresRepository,
+	pgRepo *postgres.PostgresRepository,
+	syncID string,
 	projectKey string,
 	projectID int64,
-) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	fetcher := &issueFetcher{JiraClient: s.jiraClient}
-	pool := workerpool.New(s.workerCount, s.queueSize, fetcher).WithLogger(s.logger)
-	resultCh := pool.Run(ctx)
-
-	errGroup, ctx := errgroup.WithContext(ctx)
-
-	errGroup.Go(func() error {
-		defer pool.Stop()
-
-		return s.submitAllTasks(ctx, projectKey, projectID, pool)
-	})
-
-	errGroup.Go(func() error {
-		return s.drainResults(ctx, cancel, txRepo, resultCh)
-	})
-
-	err := errGroup.Wait()
-	if err != nil {
-		return fmt.Errorf("sync project in tx: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) drainResults(
-	ctx context.Context,
-	cancel context.CancelFunc,
-	txRepo *postgres.PostgresRepository,
-	resultCh <-chan workerpool.TaskResult,
-) error {
-	var firstErr error
-
-	for res := range resultCh {
-		if res.Err != nil {
-			cancel()
-
-			if firstErr == nil {
-				firstErr = fmt.Errorf("task %s failed: %w", res.TaskID, res.Err)
-			}
-
-			continue
-		}
-
-		item, ok := res.Result.(processedIssue)
-		if !ok {
-			cancel()
-
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%w: %T", errUnexpectedResultType, res.Result)
-			}
-
-			continue
-		}
-
-		insertErr := s.insertProcessedIssue(ctx, txRepo, item)
-		if insertErr != nil {
-			cancel()
-
-			if firstErr == nil {
-				firstErr = insertErr
-			}
-
-			continue
-		}
-
-		if count := s.processed.Add(1); count%progressLogInterval == 0 {
-			s.logger.InfoContext(ctx, "sync progress", slog.Uint64("issues_processed", count))
-		}
-	}
-
-	return firstErr
-}
-
-func (s *Service) submitAllTasks(
-	ctx context.Context,
-	projectKey string,
-	projectID int64,
-	pool *workerpool.WorkerPool,
 ) error {
 	jql := "project=" + projectKey
 	startAt := 0
-	submitted := 0
+	totalSet := false
 
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("submit tasks context cancelled: %w", ctx.Err())
+			return fmt.Errorf("sync context cancelled: %w", ctx.Err())
 		default:
 		}
 
 		resp, err := s.jiraClient.SearchIssues(ctx, jql, startAt, defaultPageSize)
 		if err != nil {
-			return fmt.Errorf("search issues: %w", err)
+			return fmt.Errorf("search issues (startAt=%d): %w", startAt, err)
 		}
 
-		for _, iss := range resp.Issues {
-			task := workerpool.NewTask(iss.Key, IssueTaskPayload{
-				IssueKey:  iss.Key,
-				ProjectID: projectID,
-			})
+		if !totalSet {
+			s.manager.SetTotal(syncID, uint64(resp.Total)) //nolint:gosec
 
-			submitErr := pool.Submit(ctx, task)
-			if submitErr != nil {
-				return fmt.Errorf("submit %s: %w", iss.Key, submitErr)
+			totalSet = true
+		}
+
+		if len(resp.Issues) > 0 {
+			pageErr := s.processPage(ctx, pgRepo, syncID, projectID, resp.Issues)
+			if pageErr != nil {
+				return fmt.Errorf("process page (startAt=%d): %w", startAt, pageErr)
 			}
-
-			submitted++
 		}
 
 		if startAt+len(resp.Issues) >= resp.Total {
@@ -324,12 +316,126 @@ func (s *Service) submitAllTasks(
 		startAt += len(resp.Issues)
 	}
 
-	s.logger.InfoContext(
-		ctx,
-		"all tasks submitted",
-		slog.Int("submitted", submitted),
-		slog.String("project_key", projectKey),
-	)
+	return nil
+}
+
+// processPage fetches full details for all issues in the page via the worker pool
+// and then inserts them in a single per-page transaction.
+func (s *Service) processPage(
+	ctx context.Context,
+	pgRepo *postgres.PostgresRepository,
+	syncID string,
+	projectID int64,
+	pageIssues []jira.Issue,
+) error {
+	collected, err := s.fetchPageIssues(ctx, projectID, pageIssues)
+	if err != nil {
+		return err
+	}
+
+	return s.commitPage(ctx, pgRepo, syncID, collected)
+}
+
+// fetchPageIssues runs the worker pool for a page of issue keys and collects results.
+// Per-issue fetch failures are non-fatal (logged and skipped); programming errors are fatal.
+func (s *Service) fetchPageIssues(
+	ctx context.Context,
+	projectID int64,
+	pageIssues []jira.Issue,
+) ([]processedIssue, error) {
+	fetcher := &issueFetcher{JiraClient: s.jiraClient}
+	pool := workerpool.New(s.workerCount, s.queueSize, fetcher)
+	resultCh := pool.Run(ctx)
+
+	pageCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	group, groupCtx := errgroup.WithContext(pageCtx)
+
+	group.Go(func() error {
+		defer pool.Stop()
+
+		for _, iss := range pageIssues {
+			task := workerpool.NewTask(iss.Key, IssueTaskPayload{
+				IssueKey:  iss.Key,
+				ProjectID: projectID,
+			})
+
+			submitErr := pool.Submit(groupCtx, task)
+			if submitErr != nil {
+				return fmt.Errorf("submit %s: %w", iss.Key, submitErr)
+			}
+		}
+
+		return nil
+	})
+
+	var collected []processedIssue
+
+	group.Go(func() error {
+		for res := range resultCh {
+			if res.Err != nil {
+				// Per-issue fetch failure is non-fatal.
+				log.Printf("[sync] WARNING: fetch issue failed (task=%s): %v", res.TaskID, res.Err)
+
+				continue
+			}
+
+			item, ok := res.Result.(processedIssue)
+			if !ok {
+				// Programming error: unexpected result type is fatal.
+				cancel()
+
+				return fmt.Errorf("%w: %T", errUnexpectedResultType, res.Result)
+			}
+
+			collected = append(collected, item)
+		}
+
+		return nil
+	})
+
+	waitErr := group.Wait()
+	if waitErr != nil {
+		return nil, fmt.Errorf("fetch page: %w", waitErr)
+	}
+
+	return collected, nil
+}
+
+// commitPage persists a batch of processed issues in a single transaction.
+func (s *Service) commitPage(
+	ctx context.Context,
+	pgRepo *postgres.PostgresRepository,
+	syncID string,
+	collected []processedIssue,
+) error {
+	txErr := pgRepo.WithTransaction(ctx, func(txRepo *postgres.PostgresRepository) error {
+		for _, item := range collected {
+			insertErr := s.insertProcessedIssue(ctx, txRepo, item)
+			if insertErr != nil {
+				return insertErr
+			}
+
+			s.manager.IncrProcessed(syncID)
+			s.metrics.IncIssuesProcessed()
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		return fmt.Errorf("commit page: %w", txErr)
+	}
+
+	snap, ok := s.manager.Status(syncID)
+	if ok && snap.Processed > 0 && snap.Processed%progressLogInterval == 0 {
+		log.Printf(
+			"[sync] progress id=%s: %d/%d issues processed",
+			syncID,
+			snap.Processed,
+			snap.Total,
+		)
+	}
 
 	return nil
 }
@@ -355,23 +461,21 @@ func (s *Service) insertProcessedIssue(
 
 	issueErr := txRepo.InsertIssue(ctx, rawIssue)
 	if issueErr != nil {
-		if errors.Is(issueErr, repository.ErrIssueAlreadyExists) {
-			return nil
-		}
-
 		return fmt.Errorf("insert issue %s: %w", item.JiraIssue.Key, issueErr)
+	}
+
+	// The issue is upserted, so on a re-sync replace its status changes wholesale
+	// (the table has no natural key) instead of appending duplicates.
+	delErr := txRepo.DeleteStatusChangesByIssue(ctx, rawIssue.ID)
+	if delErr != nil {
+		return fmt.Errorf("reset status changes %s: %w", item.JiraIssue.Key, delErr)
 	}
 
 	changes := mapper.MapChangelogToRaw(item.JiraIssue, rawIssue.ID)
 	for _, ch := range changes {
 		changeErr := txRepo.InsertStatusChange(ctx, ch)
 		if changeErr != nil {
-			s.logger.WarnContext(
-				ctx,
-				"insert status change failed",
-				slog.String("issue_key", item.JiraIssue.Key),
-				slog.Any("error", changeErr),
-			)
+			log.Printf("[sync] WARNING %s: insert status change: %v", item.JiraIssue.Key, changeErr)
 		}
 	}
 
@@ -387,22 +491,16 @@ func (s *Service) ensureProject(ctx context.Context, projectKey string) (int64, 
 	for _, proj := range projectsResp.Values {
 		if proj.Key == projectKey {
 			rawProject := mapper.MapProjectToRaw(proj)
-			err = s.repo.InsertProject(ctx, rawProject)
+			insertErr := s.repo.InsertProject(ctx, rawProject)
 
-			if err != nil && !errors.Is(err, repository.ErrProjectAlreadyExists) {
-				return 0, fmt.Errorf("insert project: %w", err)
+			if insertErr != nil && !errors.Is(insertErr, repository.ErrProjectAlreadyExists) {
+				return 0, fmt.Errorf("insert project: %w", insertErr)
 			}
 
 			return rawProject.ID, nil
 		}
 	}
 
-	rawProject := mapper.MapProjectToRaw(jira.Project{Key: projectKey, Name: projectKey})
-	err = s.repo.InsertProject(ctx, rawProject)
-
-	if err != nil && !errors.Is(err, repository.ErrProjectAlreadyExists) {
-		return 0, fmt.Errorf("insert project: %w", err)
-	}
-
-	return rawProject.ID, nil
+	// Project key not found in Jira — do not fabricate a record.
+	return 0, fmt.Errorf("%w: %s", ErrProjectNotFound, projectKey)
 }

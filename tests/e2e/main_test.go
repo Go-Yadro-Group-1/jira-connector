@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -71,9 +70,7 @@ func run(m *testing.M) int {
 	jiraServer = httptest.NewServer(http.HandlerFunc(defaultJiraHandler))
 	defer jiraServer.Close()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	grpcServer := app.NewGRPCServer(sharedDB, buildJiraConfig(jiraServer.URL), logger)
+	grpcServer := app.NewGRPCServer(sharedDB, buildJiraConfig(jiraServer.URL))
 	defer grpcServer.GracefulStop()
 
 	lis, err := startListener(ctx, grpcServer)

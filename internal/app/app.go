@@ -5,7 +5,6 @@ package app
 
 import (
 	"database/sql"
-	"log/slog"
 
 	connectorv1 "github.com/Go-Yadro-Group-1/Jira-Connector/gen/proto/connector/v1"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
@@ -19,15 +18,14 @@ import (
 // NewGRPCServer wires the full dependency graph and returns a configured
 // *grpc.Server ready to call Serve on. The db connection must already be open
 // and migrations applied before calling this function.
-func NewGRPCServer(db *sql.DB, jiraCfg config.JiraConfig, logger *slog.Logger) *grpc.Server {
+func NewGRPCServer(db *sql.DB, jiraCfg config.JiraConfig) *grpc.Server {
 	jiraClient := jira.New(jiraCfg)
 	repo := postgres.New(db)
-	svc := syncsvc.NewService(jiraClient, repo, syncsvc.WithLogger(logger))
-	handler := grpchandler.New(svc, logger)
+	manager := syncsvc.NewManager()
+	svc := syncsvc.NewService(jiraClient, repo, manager)
+	handler := grpchandler.New(svc)
 
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
-		grpchandler.LoggingInterceptor(logger),
-	))
+	grpcServer := grpc.NewServer()
 	connectorv1.RegisterConnectorServiceServer(grpcServer, handler)
 
 	return grpcServer
