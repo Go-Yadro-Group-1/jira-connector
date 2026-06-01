@@ -10,7 +10,12 @@ import (
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/models/raw"
 )
 
-const hashMultiplier = 31
+const (
+	hashMultiplier = 31
+	// int31Mask keeps a hash within the positive int32 range so generated
+	// author ids fit the int4 columns in the raw schema.
+	int31Mask = 0x7FFFFFFF
+)
 
 func MapProjectToRaw(proj jira.Project) raw.Project {
 	id, _ := strconv.ParseInt(proj.ID, 10, 64)
@@ -104,7 +109,9 @@ func HashID(str string) int64 {
 		}
 	}
 
-	return hash
+	// Mask to 31 bits so the value fits the int4 author id columns in the raw
+	// schema (raw.author.id, raw.issue.author_id/assignee_id).
+	return hash & int31Mask
 }
 
 func strPtr(str string) *string {
