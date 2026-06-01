@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 
@@ -103,7 +103,7 @@ func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 	go func() {
 		err := errGroup.Wait()
 		if err != nil {
-			log.Printf("[workerpool] Worker pool stopped due to error: %v", err)
+			slog.Debug("workerpool: pool stopped due to error", "error", err)
 		}
 
 		// Close resultCh only after every worker has returned, so no worker can
@@ -157,14 +157,15 @@ func (wp *WorkerPool) Stats() *PoolStats {
 }
 
 func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
-	log.Printf("[workerpool] Worker %d started", identifier)
+	slog.Debug("workerpool: worker started", "worker_id", identifier)
 
 	for {
 		select {
 		case task, ok := <-wp.taskCh:
 			if !ok {
-				log.Printf(
-					"[workerpool] Worker %d stopping: task channel closed",
+				slog.Debug(
+					"workerpool: worker stopping: task channel closed",
+					"worker_id",
 					identifier,
 				)
 
@@ -176,11 +177,11 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 
 			if err != nil {
 				wp.stats.Failed.Add(1)
-				log.Printf(
-					"[workerpool] Worker %d: task %s failed: %v",
-					identifier,
-					task.ID,
-					err,
+				slog.Debug(
+					"workerpool: worker task failed",
+					"worker_id", identifier,
+					"task_id", task.ID,
+					"error", err,
 				)
 			} else {
 				wp.stats.Processed.Add(1)
@@ -189,19 +190,16 @@ func (wp *WorkerPool) worker(ctx context.Context, identifier int) error {
 			select {
 			case wp.resultCh <- result:
 			case <-ctx.Done():
-				log.Printf(
-					"[workerpool] Worker %d: context done while sending result",
-					identifier,
+				slog.Debug(
+					"workerpool: worker context done while sending result",
+					"worker_id", identifier,
 				)
 
 				return fmt.Errorf("worker context cancelled: %w", ctx.Err())
 			}
 
 		case <-ctx.Done():
-			log.Printf(
-				"[workerpool] Worker %d stopping: context done",
-				identifier,
-			)
+			slog.Debug("workerpool: worker stopping: context done", "worker_id", identifier)
 
 			return fmt.Errorf("worker context cancelled: %w", ctx.Err())
 		}
