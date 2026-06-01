@@ -15,6 +15,10 @@ const (
 	// int31Mask keeps a hash within the positive int32 range so generated
 	// author ids fit the int4 columns in the raw schema.
 	int31Mask = 0x7FFFFFFF
+	// jiraTimeLayout matches Jira's datetime format, which RFC3339 rejects:
+	// milliseconds and a numeric timezone offset without a colon (e.g.
+	// "2023-05-12T14:23:01.000+0000").
+	jiraTimeLayout = "2006-01-02T15:04:05.000-0700"
 )
 
 func MapProjectToRaw(proj jira.Project) raw.Project {
@@ -75,7 +79,7 @@ func MapChangelogToRaw(issue jira.Issue, issueID int64) []raw.StatusChange {
 	var changes []raw.StatusChange
 
 	for _, history := range issue.Changelog.Histories {
-		changeTime, err := time.Parse(time.RFC3339, history.Created)
+		changeTime, err := parseJiraTime(history.Created)
 		if err != nil {
 			continue
 		}
@@ -138,12 +142,27 @@ func int64Ptr(integer int64) *int64 {
 	return &integer
 }
 
+// parseJiraTime parses a Jira datetime, falling back to RFC3339.
+func parseJiraTime(str string) (time.Time, error) {
+	parsed, err := time.Parse(jiraTimeLayout, str)
+	if err == nil {
+		return parsed, nil
+	}
+
+	parsed, err = time.Parse(time.RFC3339, str)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse time %q: %w", str, err)
+	}
+
+	return parsed, nil
+}
+
 func parseTime(str string) *time.Time {
 	if str == "" {
 		return nil
 	}
 
-	parsedTime, err := time.Parse(time.RFC3339, str)
+	parsedTime, err := parseJiraTime(str)
 	if err != nil {
 		return nil
 	}
