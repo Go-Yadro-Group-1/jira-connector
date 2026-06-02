@@ -45,10 +45,10 @@ type Client struct {
 	token         string
 	client        *http.Client
 	limiter       *rate.Limiter
-	mtr           *metrics.Metrics
 	maxResults    int
 	minRetryDelay time.Duration
 	maxRetryDelay time.Duration
+	metrics       *metrics.Metrics
 }
 
 type Issue struct {
@@ -216,11 +216,11 @@ func New(cfg config.JiraConfig) *Client {
 		maxResults:    maxResults,
 		minRetryDelay: minRetry,
 		maxRetryDelay: maxRetry,
-		mtr:           nil,
 		client: &http.Client{
 			Timeout: defaultTimeout,
 		},
 		limiter: rate.NewLimiter(rate.Limit(rateLimit), 1),
+		metrics: nil,
 	}
 }
 
@@ -230,15 +230,15 @@ func (c *Client) SetTransport(transport http.RoundTripper) {
 
 // SetMetrics wires Prometheus instrumentation into the client. Passing nil (the
 // default) leaves the client uninstrumented.
-func (c *Client) SetMetrics(mtr *metrics.Metrics) {
-	c.mtr = mtr
+func (c *Client) SetMetrics(m *metrics.Metrics) {
+	c.metrics = m
 }
 
 // GetIssue fetches a single issue with its changelog, instrumented for metrics.
 func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	start := time.Now()
 	issue, err := c.fetchIssue(ctx, key)
-	c.mtr.ObserveJiraRequest("get_issue", time.Since(start).Seconds(), err)
+	c.metrics.ObserveJiraRequest("get_issue", time.Since(start).Seconds(), err)
 
 	return issue, err
 }
@@ -252,7 +252,7 @@ func (c *Client) SearchIssues(
 ) (*SearchResponse, error) {
 	start := time.Now()
 	resp, err := c.searchIssues(ctx, jql, startAt, maxResults)
-	c.mtr.ObserveJiraRequest("search_issues", time.Since(start).Seconds(), err)
+	c.metrics.ObserveJiraRequest("search_issues", time.Since(start).Seconds(), err)
 
 	return resp, err
 }
@@ -261,12 +261,11 @@ func (c *Client) SearchIssues(
 func (c *Client) GetProjects(
 	ctx context.Context,
 	searchParam string,
-	limit int,
-	page int,
+	limit int, page int,
 ) (*ProjectsResponse, error) {
 	start := time.Now()
 	resp, err := c.fetchProjects(ctx, searchParam, limit, page)
-	c.mtr.ObserveJiraRequest("get_projects", time.Since(start).Seconds(), err)
+	c.metrics.ObserveJiraRequest("get_projects", time.Since(start).Seconds(), err)
 
 	return resp, err
 }
@@ -443,7 +442,7 @@ func (c *Client) do(
 
 		switch action {
 		case actionRetry:
-			c.mtr.IncJiraRetry()
+			c.metrics.IncJiraRetry()
 
 			delay = newDelay
 			lastErr = errResp

@@ -121,6 +121,7 @@ func (wp *WorkerPool) Run(ctx context.Context) <-chan TaskResult {
 	// "send on closed channel" panics.
 	go func() {
 		workerWG.Wait()
+		wp.stopped.Store(true)
 		close(wp.resultCh)
 	}()
 
@@ -149,10 +150,11 @@ func (wp *WorkerPool) Submit(ctx context.Context, task Task) (retErr error) {
 	}
 }
 
-// Stop signals that no more tasks will be submitted and closes taskCh.
-// It is idempotent; subsequent calls are no-ops.
-// Stop does NOT close resultCh — that happens automatically in Run once all
-// workers have drained taskCh and exited.
+// Stop signals that no more tasks will be submitted by closing the input
+// channel. It is idempotent; subsequent calls are no-ops.
+// It does NOT close the result channel — that is owned by Run's
+// watcher goroutine and closed only after all workers have returned, which
+// prevents a "send on closed channel" panic on in-flight results.
 func (wp *WorkerPool) Stop() {
 	wp.once.Do(func() {
 		wp.stopped.Store(true)

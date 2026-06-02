@@ -23,5 +23,5 @@ metrics:
 
 # net/http/pprof profiling endpoint (/debug/pprof/).
 pprof:
-  enabled: false
+  enabled: true
   addr: ":6060"

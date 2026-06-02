@@ -190,13 +190,15 @@ func buildGRPCServer(
 	jiraClient.SetMetrics(mtr)
 
 	repo := postgres.New(dbConn)
+	manager := syncsvc.NewManager()
 	svc := syncsvc.NewService(
 		jiraClient,
 		repo,
+		manager,
 		syncsvc.WithLogger(logger),
 		syncsvc.WithMetrics(mtr),
 	)
-	handler := grpchandler.New(svc, logger)
+	handler := grpchandler.New(svc) // Handler in async branch does not take logger, only LoggingInterceptor does
 
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
 		grpchandler.LoggingInterceptor(logger),
@@ -215,12 +217,12 @@ func startObservability(
 	mtr *metrics.Metrics,
 ) *observability.Server {
 	metricsAddr := ""
-	if cfg.Metrics.Enabled {
+	if cfg.Metrics.IsEnabled() {
 		metricsAddr = cfg.Metrics.Addr
 	}
 
 	pprofAddr := ""
-	if cfg.Pprof.Enabled {
+	if cfg.Pprof.IsEnabled() {
 		pprofAddr = cfg.Pprof.Addr
 	}
 

@@ -26,10 +26,11 @@ func mustQuery(name string) string {
 
 //nolint:gochecknoglobals
 var (
-	insertProjectQuery      = mustQuery("insert_project.sql")
-	insertAuthorQuery       = mustQuery("insert_author.sql")
-	insertIssueQuery        = mustQuery("insert_issue.sql")
-	insertStatusChangeQuery = mustQuery("insert_status_change.sql")
+	insertProjectQuery              = mustQuery("insert_project.sql")
+	insertAuthorQuery               = mustQuery("insert_author.sql")
+	insertIssueQuery                = mustQuery("insert_issue.sql")
+	insertStatusChangeQuery         = mustQuery("insert_status_change.sql")
+	deleteStatusChangesByIssueQuery = mustQuery("delete_status_changes_by_issue.sql")
 )
 
 var (
@@ -206,6 +207,18 @@ func (r *PostgresRepository) InsertStatusChange(
 	)
 	if err != nil {
 		return fmt.Errorf("insert status change: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteStatusChangesByIssue removes all status changes for an issue so they can
+// be re-inserted on a re-sync without duplicating rows (status_changes has no
+// natural key).
+func (r *PostgresRepository) DeleteStatusChangesByIssue(ctx context.Context, issueID int64) error {
+	_, err := r.db.ExecContext(ctx, deleteStatusChangesByIssueQuery, issueID)
+	if err != nil {
+		return fmt.Errorf("delete status changes for issue %d: %w", issueID, err)
 	}
 
 	return nil

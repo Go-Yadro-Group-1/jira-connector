@@ -22,8 +22,9 @@ import (
 func NewGRPCServer(db *sql.DB, jiraCfg config.JiraConfig, logger *slog.Logger) *grpc.Server {
 	jiraClient := jira.New(jiraCfg)
 	repo := postgres.New(db)
-	svc := syncsvc.NewService(jiraClient, repo, syncsvc.WithLogger(logger))
-	handler := grpchandler.New(svc, logger)
+	manager := syncsvc.NewManager()
+	svc := syncsvc.NewService(jiraClient, repo, manager, syncsvc.WithLogger(logger))
+	handler := grpchandler.New(svc)
 
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
 		grpchandler.LoggingInterceptor(logger),

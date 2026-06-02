@@ -9,23 +9,21 @@ import (
 )
 
 const (
-	DefaultHost          = "0.0.0.0"
-	DefaultPort          = 50052
-	DefaultMaxResults    = 50
-	DefaultMinRetry      = 1000
-	DefaultMaxRetry      = 60000
-	DefaultRateLimit     = 25.0
-	DefaultConfigPath    = "config/dev.yaml"
-	DefaultLogLevel      = "info"
-	DefaultDBHost        = "localhost"
-	DefaultDBPort        = 5432
-	DefaultDBUser        = "postgres"
-	DefaultDBPassword    = "password"
-	DefaultDBName        = "jira_connector"
-	DefaultMetricsAddr   = ":9090"
-	DefaultMetricsEnable = true
-	DefaultPprofAddr     = ":6060"
-	DefaultPprofEnable   = false
+	DefaultHost        = "0.0.0.0"
+	DefaultPort        = 50052
+	DefaultMaxResults  = 50
+	DefaultMinRetry    = 1000
+	DefaultMaxRetry    = 60000
+	DefaultRateLimit   = 25.0
+	DefaultConfigPath  = "config/dev.yaml"
+	DefaultLogLevel    = "info"
+	DefaultDBHost      = "localhost"
+	DefaultDBPort      = 5432
+	DefaultDBUser      = "postgres"
+	DefaultDBPassword  = "password"
+	DefaultDBName      = "jira_connector"
+	DefaultMetricsAddr = ":9090"
+	DefaultPprofAddr   = ":6060"
 )
 
 var ErrJiraBaseURLRequired = errors.New("jira.baseUrl is required")
@@ -47,22 +45,24 @@ type DBConfig struct {
 	DBName   string `yaml:"dbname"`
 }
 
-// MetricsConfig configures the Prometheus /metrics scrape endpoint.
-type MetricsConfig struct {
-	Enabled bool   `yaml:"enabled"`
+// ObsEndpoint configures a single diagnostic HTTP endpoint (metrics or pprof).
+// Enabled is a pointer so an absent block defaults to on, while an explicit
+// `enabled: false` can turn it off.
+type ObsEndpoint struct {
+	Enabled *bool  `yaml:"enabled"`
 	Addr    string `yaml:"addr"`
 }
 
-type PprofConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Addr    string `yaml:"addr"`
+// IsEnabled reports whether the endpoint should be started.
+func (e ObsEndpoint) IsEnabled() bool {
+	return e.Enabled == nil || *e.Enabled
 }
 
 type AppConfig struct {
-	Jira    JiraConfig    `yaml:"jira"`
-	DB      DBConfig      `yaml:"db"`
-	Metrics MetricsConfig `yaml:"metrics"`
-	Pprof   PprofConfig   `yaml:"pprof"`
+	Jira    JiraConfig  `yaml:"jira"`
+	DB      DBConfig    `yaml:"db"`
+	Metrics ObsEndpoint `yaml:"metrics"`
+	Pprof   ObsEndpoint `yaml:"pprof"`
 	App     struct {
 		LogLevel string `yaml:"logLevel"`
 	} `yaml:"app"`
@@ -104,27 +104,17 @@ func Load(path string) (*AppConfig, error) {
 func applyDefaults(cfg *AppConfig) {
 	applyJiraDefaults(&cfg.Jira)
 	applyDBDefaults(&cfg.DB)
-	applyMetricsDefaults(&cfg.Metrics)
-	applyPprofDefaults(&cfg.Pprof)
+
+	if cfg.Metrics.Addr == "" {
+		cfg.Metrics.Addr = DefaultMetricsAddr
+	}
+
+	if cfg.Pprof.Addr == "" {
+		cfg.Pprof.Addr = DefaultPprofAddr
+	}
 
 	if cfg.App.LogLevel == "" {
 		cfg.App.LogLevel = DefaultLogLevel
-	}
-}
-
-func applyMetricsDefaults(cfg *MetricsConfig) {
-	// When no metrics block was present in the YAML the addr is empty. Apply
-	// full defaults including enabling the endpoint. An explicit YAML block
-	// (even with just addr set) preserves the user's enabled choice.
-	if cfg.Addr == "" {
-		cfg.Addr = DefaultMetricsAddr
-		cfg.Enabled = DefaultMetricsEnable
-	}
-}
-
-func applyPprofDefaults(cfg *PprofConfig) {
-	if cfg.Addr == "" {
-		cfg.Addr = DefaultPprofAddr
 	}
 }
 
