@@ -11,9 +11,11 @@ import (
 	"log/slog"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/client/jira"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/mapper"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/workerpool"
@@ -60,6 +62,7 @@ type Service struct {
 	jiraClient  JiraClient
 	repo        repository.Repository
 	logger      *slog.Logger
+	mtr         *metrics.Metrics
 	workerCount int
 	queueSize   int
 	processed   atomic.Uint64
@@ -80,11 +83,20 @@ func WithLogger(logger *slog.Logger) ServiceOption {
 	}
 }
 
+// WithMetrics wires Prometheus instrumentation into the service. Passing nil
+// (the default) leaves all sync recording as no-ops.
+func WithMetrics(mtr *metrics.Metrics) ServiceOption {
+	return func(s *Service) {
+		s.mtr = mtr
+	}
+}
+
 func NewService(jiraClient JiraClient, repo repository.Repository, opts ...ServiceOption) *Service {
 	svc := &Service{
 		jiraClient:  jiraClient,
 		repo:        repo,
 		logger:      slog.Default(),
+		mtr:         nil,
 		workerCount: defaultWorkerCount,
 		queueSize:   defaultQueueSize,
 	}
@@ -177,6 +189,19 @@ func collectAuthors(issue *jira.Issue, fields *jira.IssueFields) []jira.Author {
 func (s *Service) SyncProject(ctx context.Context, projectKey string) (string, error) {
 	s.logger.InfoContext(ctx, "starting sync", slog.String("project_key", projectKey))
 
+	s.mtr.SyncJobStarted()
+
+	start := time.Now()
+
+	projectID, syncErr := s.syncProject(ctx, projectKey)
+
+	s.mtr.ObserveSyncDuration(time.Since(start).Seconds())
+	s.mtr.SyncJobFinished(syncErr != nil)
+
+	return projectID, syncErr
+}
+
+func (s *Service) syncProject(ctx context.Context, projectKey string) (string, error) {
 	projectID, err := s.ensureProject(ctx, projectKey)
 	if err != nil {
 		return "", fmt.Errorf("ensure project: %w", err)
@@ -272,6 +297,8 @@ func (s *Service) drainResults(
 
 			continue
 		}
+
+		s.mtr.IncIssuesProcessed()
 
 		if count := s.processed.Add(1); count%progressLogInterval == 0 {
 			s.logger.InfoContext(ctx, "sync progress", slog.Uint64("issues_processed", count))

@@ -15,6 +15,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
 )
 
 const (
@@ -44,6 +45,7 @@ type Client struct {
 	token         string
 	client        *http.Client
 	limiter       *rate.Limiter
+	mtr           *metrics.Metrics
 	maxResults    int
 	minRetryDelay time.Duration
 	maxRetryDelay time.Duration
@@ -214,6 +216,7 @@ func New(cfg config.JiraConfig) *Client {
 		maxResults:    maxResults,
 		minRetryDelay: minRetry,
 		maxRetryDelay: maxRetry,
+		mtr:           nil,
 		client: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -225,7 +228,50 @@ func (c *Client) SetTransport(transport http.RoundTripper) {
 	c.client.Transport = transport
 }
 
+// SetMetrics wires Prometheus instrumentation into the client. Passing nil (the
+// default) leaves the client uninstrumented.
+func (c *Client) SetMetrics(mtr *metrics.Metrics) {
+	c.mtr = mtr
+}
+
+// GetIssue fetches a single issue with its changelog, instrumented for metrics.
 func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
+	start := time.Now()
+	issue, err := c.fetchIssue(ctx, key)
+	c.mtr.ObserveJiraRequest("get_issue", time.Since(start).Seconds(), err)
+
+	return issue, err
+}
+
+// SearchIssues runs a JQL search, instrumented for metrics.
+func (c *Client) SearchIssues(
+	ctx context.Context,
+	jql string,
+	startAt int,
+	maxResults int,
+) (*SearchResponse, error) {
+	start := time.Now()
+	resp, err := c.searchIssues(ctx, jql, startAt, maxResults)
+	c.mtr.ObserveJiraRequest("search_issues", time.Since(start).Seconds(), err)
+
+	return resp, err
+}
+
+// GetProjects lists projects, instrumented for metrics.
+func (c *Client) GetProjects(
+	ctx context.Context,
+	searchParam string,
+	limit int,
+	page int,
+) (*ProjectsResponse, error) {
+	start := time.Now()
+	resp, err := c.fetchProjects(ctx, searchParam, limit, page)
+	c.mtr.ObserveJiraRequest("get_projects", time.Since(start).Seconds(), err)
+
+	return resp, err
+}
+
+func (c *Client) fetchIssue(ctx context.Context, key string) (*Issue, error) {
 	urlStr := fmt.Sprintf("/rest/api/2/issue/%s?expand=changelog", key)
 
 	resp, err := c.do(ctx, http.MethodGet, urlStr, nil)
@@ -244,7 +290,7 @@ func (c *Client) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	return &issue, nil
 }
 
-func (c *Client) SearchIssues(
+func (c *Client) searchIssues(
 	ctx context.Context,
 	jql string,
 	startAt int,
@@ -277,10 +323,11 @@ func (c *Client) SearchIssues(
 	return &searchResp, nil
 }
 
-func (c *Client) GetProjects(
+func (c *Client) fetchProjects(
 	ctx context.Context,
 	searchParam string,
-	limit int, page int,
+	limit int,
+	page int,
 ) (*ProjectsResponse, error) {
 	if limit <= 0 {
 		limit = 50
@@ -396,6 +443,8 @@ func (c *Client) do(
 
 		switch action {
 		case actionRetry:
+			c.mtr.IncJiraRetry()
+
 			delay = newDelay
 			lastErr = errResp
 

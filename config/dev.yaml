@@ -16,6 +16,12 @@ db:
 app:
   logLevel: "info"
 
-pprof:
+# Prometheus metrics endpoint (/metrics). Scrape target for Prometheus.
+metrics:
   enabled: true
+  addr: ":9090"
+
+# net/http/pprof profiling endpoint (/debug/pprof/).
+pprof:
+  enabled: false
   addr: ":6060"

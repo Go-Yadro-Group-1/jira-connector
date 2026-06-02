@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +16,8 @@ import (
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/config"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/database"
 	grpchandler "github.com/Go-Yadro-Group-1/Jira-Connector/internal/handler/grpc"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/metrics"
+	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/observability"
 	"github.com/Go-Yadro-Group-1/Jira-Connector/internal/repository/postgres"
 	syncsvc "github.com/Go-Yadro-Group-1/Jira-Connector/internal/service/sync"
 	"github.com/spf13/cobra"
@@ -29,11 +30,11 @@ const (
 )
 
 type Server struct {
-	grpcServer  *grpc.Server
-	lis         net.Listener
-	db          *sql.DB
-	pprofServer *http.Server
-	logger      *slog.Logger
+	grpcServer *grpc.Server
+	lis        net.Listener
+	db         *sql.DB
+	obs        *observability.Server
+	logger     *slog.Logger
 }
 
 func (s *Server) Close() {
@@ -41,8 +42,8 @@ func (s *Server) Close() {
 		s.grpcServer.GracefulStop()
 	}
 
-	if s.pprofServer != nil {
-		pprofShutdown(s.pprofServer)
+	if s.obs != nil {
+		s.obs.Shutdown()
 	}
 
 	if s.db != nil {
@@ -140,19 +141,17 @@ func startServer(cmd *cobra.Command, cfg *config.AppConfig, logger *slog.Logger)
 		return fmt.Errorf("init database: %w", err)
 	}
 
-	grpcServer := buildGRPCServer(dbConn, cfg, logger)
+	mtr := metrics.New()
+	mtr.RegisterRuntimeCollectors()
 
-	var pprofSrv *http.Server
-	if cfg.Pprof.Enabled {
-		pprofSrv = startPprofServer(cfg.Pprof.Addr, logger)
-	}
+	grpcServer := buildGRPCServer(dbConn, cfg, logger, mtr)
 
 	srv := &Server{
-		grpcServer:  grpcServer,
-		lis:         lis,
-		db:          dbConn,
-		pprofServer: pprofSrv,
-		logger:      logger,
+		grpcServer: grpcServer,
+		lis:        lis,
+		db:         dbConn,
+		obs:        startObservability(cfg, logger, mtr),
+		logger:     logger,
 	}
 
 	registerShutdownHook(srv, logger)
@@ -181,18 +180,51 @@ func resolveListenAddr(cmd *cobra.Command) (string, error) {
 	return fmt.Sprintf("%s:%d", host, port), nil
 }
 
-func buildGRPCServer(dbConn *sql.DB, cfg *config.AppConfig, logger *slog.Logger) *grpc.Server {
+func buildGRPCServer(
+	dbConn *sql.DB,
+	cfg *config.AppConfig,
+	logger *slog.Logger,
+	mtr *metrics.Metrics,
+) *grpc.Server {
 	jiraClient := jira.New(cfg.Jira)
+	jiraClient.SetMetrics(mtr)
+
 	repo := postgres.New(dbConn)
-	svc := syncsvc.NewService(jiraClient, repo, syncsvc.WithLogger(logger))
+	svc := syncsvc.NewService(
+		jiraClient,
+		repo,
+		syncsvc.WithLogger(logger),
+		syncsvc.WithMetrics(mtr),
+	)
 	handler := grpchandler.New(svc, logger)
 
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
 		grpchandler.LoggingInterceptor(logger),
+		mtr.GRPCServer.UnaryServerInterceptor(),
 	))
 	connectorv1.RegisterConnectorServiceServer(grpcServer, handler)
+	mtr.GRPCServer.InitializeMetrics(grpcServer)
 
 	return grpcServer
+}
+
+// startObservability launches the metrics and pprof endpoints enabled in cfg.
+func startObservability(
+	cfg *config.AppConfig,
+	logger *slog.Logger,
+	mtr *metrics.Metrics,
+) *observability.Server {
+	metricsAddr := ""
+	if cfg.Metrics.Enabled {
+		metricsAddr = cfg.Metrics.Addr
+	}
+
+	pprofAddr := ""
+	if cfg.Pprof.Enabled {
+		pprofAddr = cfg.Pprof.Addr
+	}
+
+	return observability.New(logger, mtr, metricsAddr, pprofAddr)
 }
 
 func registerShutdownHook(srv *Server, logger *slog.Logger) {
